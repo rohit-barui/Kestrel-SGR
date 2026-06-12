@@ -10,6 +10,126 @@ interface.
 from typing import Dict, Any, List
 
 # ---------------------------------------------------------------------------
+# JSON Schema constants for input/output validation
+# ---------------------------------------------------------------------------
+
+AGGREGATE_RISK_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "extract_urls": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}},
+                "domains": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "scan_qr_codes": {
+            "type": "object",
+            "properties": {
+                "qr_urls": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "extract_archive_password": {
+            "type": "object",
+            "properties": {
+                "archive_password": {"type": "string"}
+            }
+        },
+        "whois_lookup": {
+            "type": "object",
+            "properties": {
+                "whois": {"type": "object"}
+            }
+        },
+        "enrich_dns": {
+            "type": "object",
+            "properties": {
+                "dns": {"type": "object"}
+            }
+        },
+        "detect_typo_squatting": {
+            "type": "object",
+            "properties": {
+                "typo_squatting": {"type": "array", "items": {"type": "string"}}
+            }
+        }
+    }
+}
+
+AGGREGATE_RISK_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "risk_score": {"type": "integer"}
+            },
+            "required": ["risk_score"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+APPLY_VETO_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "aggregate_risk": {
+            "type": "object",
+            "properties": {
+                "risk_score": {"type": "integer"}
+            }
+        }
+    },
+    "required": ["aggregate_risk"]
+}
+
+APPLY_VETO_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "risk_score": {"type": "integer"},
+                "final_confidence": {"type": "integer"}
+            },
+            "required": ["risk_score", "final_confidence"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+RECOMMEND_ACTIONS_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "apply_veto": {
+            "type": "object",
+            "properties": {
+                "risk_score": {"type": "integer"},
+                "final_confidence": {"type": "integer"}
+            }
+        }
+    },
+    "required": ["apply_veto"]
+}
+
+RECOMMEND_ACTIONS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "actions": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["actions"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+# ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
 
@@ -57,5 +177,32 @@ def recommend_actions(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         actions = ["block"]
     return {"output": {"actions": actions}, "confidence": _default_confidence()}
+
+def validate_spf_dkim(payload: Dict[str, Any]) -> Dict[str, Any]:
+    content = payload.get("ingest", {}).get("content", "")
+    spf_result = "neutral"
+    dkim_result = "neutral"
+    dmarc_result = "neutral"
+    is_spoofed = False
+    if "spf=pass" in content:
+        spf_result = "pass"
+    elif "spf=fail" in content:
+        spf_result = "fail"
+        is_spoofed = True
+    if "dkim=pass" in content:
+        dkim_result = "pass"
+    if spf_result == "pass" and dkim_result == "pass":
+        dmarc_result = "pass"
+    elif spf_result == "fail" or dkim_result == "fail":
+        dmarc_result = "fail"
+    return {
+        "output": {
+            "spf_result": spf_result,
+            "dkim_result": dkim_result,
+            "dmarc_result": dmarc_result,
+            "is_spoofed": is_spoofed
+        },
+        "confidence": _default_confidence()
+    }
 
 # End of skills/decision.py

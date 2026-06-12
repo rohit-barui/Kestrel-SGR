@@ -11,18 +11,32 @@ Provides:
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Any, Callable
+from typing import Dict, List, Any, Callable, Tuple
+
+import jsonschema
+
+from core.reasoning import combine, heuristic_boost
 
 # Placeholder types – real implementations will replace these
 SkillFunction = Callable[[Dict[str, Any]], Dict[str, Any]]
 
+SKILL_WEIGHTS = {
+    "ingest": 0.05, "extract_urls": 0.10, "scan_qr_codes": 0.10,
+    "extract_archive_password": 0.05, "whois_lookup": 0.10,
+    "enrich_dns": 0.05, "detect_typo_squatting": 0.15,
+    "aggregate_risk": 0.15, "apply_veto": 0.15, "recommend_actions": 0.10,
+}
+
 class SkillNode:
-    def __init__(self, name: str, func: SkillFunction, deps: List[str] = None):
+    def __init__(self, name: str, func: SkillFunction, deps: List[str] = None,
+                 input_schema: dict = None, output_schema: dict = None):
         self.name = name
         self.func = func
         self.deps = deps or []
         self.result: Dict[str, Any] = {}
         self.success: bool = False
+        self.input_schema = input_schema
+        self.output_schema = output_schema
 
 class SkillGraphRuntime:
     def __init__(self, nodes: List[SkillNode], gateway):
@@ -41,7 +55,7 @@ class SkillGraphRuntime:
         ready = [self.nodes[n] for n, d in in_degree.items() if d == 0]
         order: List[SkillNode] = []
         while ready:
-            current = ready.pop()
+            current = ready.pop(0)
             order.append(current)
             for n in self.nodes.values():
                 if current.name in n.deps:
@@ -51,6 +65,16 @@ class SkillGraphRuntime:
         if len(order) != len(self.nodes):
             raise RuntimeError("Cycle detected in skill graph")
         return order
+
+    # ---------------------------------------------------------------------
+    # Schema validation
+    # ---------------------------------------------------------------------
+    def _validate(self, data: dict, schema: dict, stage: str, node_name: str):
+        if schema is not None:
+            try:
+                jsonschema.validate(data, schema)
+            except jsonschema.ValidationError as e:
+                raise RuntimeError(f"Schema validation failed for {node_name} {stage}: {e}")
 
     # ---------------------------------------------------------------------
     # Execution – runs nodes respecting dependencies, aggregates confidence
@@ -63,7 +87,7 @@ class SkillGraphRuntime:
 
         # Mapping of node name -> output for dependency injection
         context: Dict[str, Any] = {"__entry__": entry_payload}
-        confidence_weights: List[float] = []
+        confidence_weights: List[Tuple[str, float]] = []
         with ThreadPoolExecutor() as executor:
             future_to_node: Dict[Any, SkillNode] = {}
             # schedule nodes whose deps are satisfied
@@ -79,6 +103,7 @@ class SkillGraphRuntime:
                     inputs = {dep: context[dep] for dep in node.deps}
                     # Include entry payload for convenience
                     inputs["__entry__"] = entry_payload
+                    self._validate(inputs, node.input_schema, "input", node.name)
                     future = executor.submit(node.func, inputs)
                     future_to_node[future] = node
                     self.execution_order.remove(node)
@@ -87,13 +112,14 @@ class SkillGraphRuntime:
                     node = future_to_node[future]
                     try:
                         result = future.result()
+                        self._validate(result, node.output_schema, "output", node.name)
                         node.result = result
                         node.success = True
                         # store for downstream deps
                         context[node.name] = result.get("output", {})
                         # collect confidence if present
                         if "confidence" in result:
-                            confidence_weights.append(result["confidence"])
+                            confidence_weights.append((node.name, result["confidence"]))
                         # record side‑effect for possible rollback via gateway
                         if "side_effects" in result:
                             for se in result["side_effects"]:
@@ -104,10 +130,31 @@ class SkillGraphRuntime:
                         self.gateway.rollback()
                         raise RuntimeError(f"Skill {node.name} failed: {exc}")
         # After all nodes succeeded, compute aggregated confidence
-        aggregated_confidence = (
-            sum(confidence_weights) / len(confidence_weights)
-            if confidence_weights else 0
-        )
+        if confidence_weights:
+            scores = [conf for _, conf in confidence_weights]
+            weights = [SKILL_WEIGHTS.get(name, 0.1) for name, _ in confidence_weights]
+            aggregated_confidence = combine(scores, weights)
+        else:
+            aggregated_confidence = 0
+
+        # Boost confidence if low but threat signals are abundant
+        if aggregated_confidence < 50:
+            threat_signals = 0
+            urls = context.get("extract_urls", {}).get("urls", [])
+            if urls:
+                threat_signals += len(urls)
+            pwd = context.get("extract_archive_password", {}).get("archive_password", "")
+            if pwd:
+                threat_signals += 1
+            typo = context.get("detect_typo_squatting", {}).get("typo_squatting", [])
+            if typo:
+                threat_signals += len(typo)
+            if threat_signals > 2:
+                aggregated_confidence = heuristic_boost(
+                    risk_score=aggregated_confidence,
+                    threat_signals=threat_signals,
+                    base=aggregated_confidence
+                )
         # Commit saga – no rollback needed
         self.gateway.commit()
         return {
