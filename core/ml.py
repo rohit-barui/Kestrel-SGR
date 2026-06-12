@@ -15,6 +15,7 @@ first run when no model is present.  Training data is synthetic but covers the
 typical clean, phishing and borderline cases used throughout the test suite.
 """
 import os
+from config.constants import EXAMPLE_URLS
 import json
 import pickle
 import hashlib
@@ -149,6 +150,11 @@ class MLScorer:
                 kw,                             # keyword_hits
             ]
         # Benign example – few URLs, no password, no typo.
+        benign = make_vec([EXAMPLE_URLS["company"]], [], "", [], 3, ["company.com"], False, 0)
+        # Phishing – many URLs, password, typo domains, spoofed spf/dkim.
+        phishing = make_vec(
+            [EXAMPLE_URLS["secure_login"], EXAMPLE_URLS["malicious_phish"]],
+            [EXAMPLE_URLS["malicious_qr"]],
         benign = make_vec(["https://company.com"], [], "", [], 3, ["company.com"], False, 0)
         # Phishing – many URLs, password, typo domains, spoofed spf/dkim.
         phishing = make_vec(

@@ -92,7 +92,7 @@ const statusBadge = document.getElementById("statusBadge");
 const payloadPreview = document.getElementById("payloadPreview");
 const riskScoreEl = document.getElementById("riskScore");
 const policyStatusEl = document.getElementById("policyStatus");
-const confidenceEl = document.getElementById("confidence");
+const mlConfidenceEl = document.getElementById("mlConfidence");
 const actionsEl = document.getElementById("actions");
 const logEntries = document.getElementById("logEntries");
 const replayBtn = document.getElementById("replayBtn");
@@ -222,12 +222,13 @@ function setupSSE() {
   });
   evtSource.addEventListener("run_complete", (e) => {
     const data = JSON.parse(e.data);
-    riskScoreEl.textContent = data.risk_score;
-    riskScoreEl.className = "metric-value" + (data.risk_score >= 70 ? " risk-high" : data.risk_score >= 30 ? " risk-medium" : " risk-low");
-    policyStatusEl.textContent = data.decision;
-    policyStatusEl.style.color = data.decision === "ALLOW" ? "var(--accent-emerald)" : "var(--accent-rose)";
-    confidenceEl.textContent = data.confidence + "%";
-    actionsEl.textContent = data.actions.join(", ");
+      riskScoreEl.textContent = data.risk_score;
+      riskScoreEl.className = "metric-value" + (data.risk_score >= 70 ? " risk-high" : data.risk_score >= 30 ? " risk-medium" : " risk-low");
+      policyStatusEl.textContent = data.decision;
+      policyStatusEl.style.color = data.decision === "ALLOW" ? "var(--accent-emerald)" : "var(--accent-rose)";
+      confidenceEl.textContent = data.confidence + "%";
+      mlConfidenceEl.textContent = data.ml_confidence !== null ? data.ml_confidence + "%" : "-";
+      actionsEl.textContent = data.actions.join(", ");
     if (data.dominance) {
       if (data.dominance.honey_credentials.length) log("Honey creds deployed", "action");
       if (Object.keys(data.dominance.rewritten_urls).length) log("Links rewritten to proxy", "action");
