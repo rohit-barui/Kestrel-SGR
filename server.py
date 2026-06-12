@@ -6,6 +6,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.engine import SkillNode, SkillGraphRuntime
 from core.gateway import Gateway
 from core.policy import SimpleRegoEngine
+from core.replay import ReplayStore
+from core.drift import DriftTracker
+from core.red_team import generate_all as generate_red_team_payloads
 from skills.perception import (
     ingest_payload, extract_urls, scan_qr_codes,
     extract_archive_password, whois_lookup, enrich_dns,
@@ -127,6 +130,20 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/events":
             self._handle_sse()
             return
+        if path == "/api/replay":
+            self._send_json({"scan_ids": replay_store.list_ids()})
+            return
+        if path.startswith("/api/replay/"):
+            scan_id = path.split("/api/replay/")[1]
+            trace = replay_store.get(scan_id)
+            if trace:
+                self._send_json(trace)
+            else:
+                self._send_json({"error": "not found"}, 404)
+            return
+        if path == "/api/red-team":
+            self._send_json(generate_red_team_payloads())
+            return
 
         web_path = os.path.join(WEB_DIR, path.lstrip("/") or "index.html")
         if os.path.isfile(web_path):
@@ -188,6 +205,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         gateway = Gateway()
         def on_done(name, result):
             broadcast("skill_done", {"scan_id": scan_id, "node": name, "output": result.get("output", {}), "confidence": result.get("confidence", 0)})
+            replay_store.add_event(scan_id, name, result.get("output", {}), result.get("confidence", 0))
         runtime = build_graph(gateway, on_node_done=on_done)
         try:
             broadcast("scan_start", {"scan_id": scan_id})
@@ -209,7 +227,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
             decision = "ALLOW" if is_allowed else "DENY"
-            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions})
+            replay_store.store(scan_id, body, final_output, decision, risk_score, confidence, actions)
+            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
             self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
         except Exception as e:
             broadcast("run_error", {"scan_id": scan_id, "error": str(e)})
@@ -243,6 +262,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 policy_engine = SimpleRegoEngine(POLICY_FILE)
+replay_store = ReplayStore()
+drift_tracker = DriftTracker()
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
