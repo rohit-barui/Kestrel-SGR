@@ -298,3 +298,47 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   max-height: 200px;
   color: var(--text-dim);
 }
+
+.analytics-panel { }
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+#trendChart {
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 12px;
+}
+#trendSvg { display: block; }
+.bar { fill: var(--accent-cyan); transition: fill 0.3s; }
+.bar.risk-high { fill: var(--accent-rose); }
+.bar.risk-medium { fill: var(--accent-amber); }
+#alertHistory h3 {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+#alertList {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.alert-entry {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.alert-entry .risk-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  margin-right: 6px;
+}
+.risk-badge.low { background: rgba(16,185,129,0.2); color: var(--accent-emerald); }
+.risk-badge.medium { background: rgba(245,158,11,0.2); color: var(--accent-amber); }
+.risk-badge.high { background: rgba(244,63,94,0.2); color: var(--accent-rose); }
