@@ -1,0 +1,10 @@
+[run]
+source = core, skills, server
+omit = */test*, */__pycache__/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if __name__ == .__main__.:

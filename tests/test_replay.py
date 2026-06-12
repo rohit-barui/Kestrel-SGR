@@ -36,6 +36,15 @@ class TestReplayStore(unittest.TestCase):
     def test_get_nonexistent(self):
         self.assertIsNone(self.store.get("nonexistent"))
 
+    def test_stats_with_scans(self):
+        self.store.store("s1", {}, {"risk_score": 50, "confidence": 80}, "ALLOW", 50, 80, ["allow"])
+        self.store.store("s2", {}, {"risk_score": 90, "confidence": 95}, "DENY", 90, 95, ["block"])
+        stats = self.store.stats()
+        self.assertEqual(stats["total_scans"], 2)
+        self.assertEqual(stats["allow_count"], 1)
+        self.assertEqual(stats["deny_count"], 1)
+        self.assertAlmostEqual(stats["avg_risk"], 70.0)
+
     def test_to_json(self):
         self.store.store("s1", {}, {}, "ALLOW", 0, 0, [])
         json_str = self.store.to_json("s1")

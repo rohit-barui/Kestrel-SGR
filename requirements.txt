@@ -1,1 +1,6 @@
 jsonschema>=4.0.0
+# python-whois  # optional, for real WHOIS lookups
+
+# Dev/CI only:
+# coverage
+# ruff

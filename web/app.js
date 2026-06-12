@@ -184,6 +184,7 @@ function setupSSE() {
     }
     statusBadge.textContent = data.decision;
     statusBadge.style.background = data.decision === "ALLOW" ? "var(--accent-emerald)" : "var(--accent-rose)";
+    loadAnalytics();
     replayBtn.disabled = false;
     replayEvents = [];
     replayIndex = -1;
@@ -259,6 +260,65 @@ function activateEdgesForNode(nodeId) {
     const el = document.querySelector(`.edge-line[data-id="${edgeId}"]`);
     if (el) el.classList.add("active");
   });
+}
+
+async function loadAnalytics() {
+  try {
+    const [statsRes, trendRes] = await Promise.all([
+      fetch("/api/stats"),
+      fetch("/api/trend"),
+    ]);
+    const stats = await statsRes.json();
+    const trend = await trendRes.json();
+    renderStats(stats);
+    renderTrendChart(trend);
+    renderAlertHistory(trend);
+  } catch (e) {
+    // analytics unavailable
+  }
+}
+
+function renderStats(stats) {
+  document.getElementById("totalScans").textContent = stats.total_scans;
+  document.getElementById("avgRisk").textContent = stats.avg_risk;
+  const total = stats.allow_count + stats.deny_count;
+  document.getElementById("allowRate").textContent = total > 0 ? Math.round(stats.allow_count / total * 100) + "%" : "-";
+  document.getElementById("blockRate").textContent = total > 0 ? Math.round(stats.deny_count / total * 100) + "%" : "-";
+}
+
+function renderTrendChart(trend) {
+  const svg = document.getElementById("trendSvg");
+  if (!svg || trend.length === 0) return;
+  const width = svg.clientWidth || 400;
+  const height = 120;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  const maxRisk = Math.max(...trend.map(t => t.risk_score), 1);
+  const barWidth = Math.max(4, (width - 20) / trend.length - 2);
+
+  svg.innerHTML = "";
+  trend.forEach((t, i) => {
+    const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    const barH = (t.risk_score / maxRisk) * (height - 20);
+    const x = 10 + i * (barWidth + 2);
+    const y = height - 10 - barH;
+    bar.setAttribute("x", x);
+    bar.setAttribute("y", y);
+    bar.setAttribute("width", barWidth);
+    bar.setAttribute("height", barH);
+    bar.setAttribute("class", "bar" + (t.risk_score >= 70 ? " risk-high" : t.risk_score >= 30 ? " risk-medium" : ""));
+    svg.appendChild(bar);
+  });
+}
+
+function renderAlertHistory(trend) {
+  const alerts = document.getElementById("alertList");
+  if (!alerts) return;
+  const highRisk = trend.filter(t => t.risk_score >= 30).slice(-10).reverse();
+  alerts.innerHTML = highRisk.map(t => {
+    const level = t.risk_score >= 70 ? "high" : "medium";
+    return `<div class="alert-entry"><span class="risk-badge ${level}">${t.risk_score}</span>${t.decision} (${t.scan_id.slice(0,8)})</div>`;
+  }).join("");
 }
 
 function drawGraph() {
@@ -359,6 +419,7 @@ window.addEventListener("load", () => {
   loadScenarios();
   setupSSE();
   drawGraph();
+  loadAnalytics();
 });
 
 window.addEventListener("resize", () => {

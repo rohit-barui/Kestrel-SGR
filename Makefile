@@ -1,4 +1,4 @@
-.PHONY: build run stop clean test
+.PHONY: build run stop clean test lint format coverage ci
 
 build:
 	docker compose build
@@ -14,6 +14,19 @@ logs:
 
 test:
 	python -m unittest discover -s tests -v
+
+lint:
+	ruff check .
+
+format:
+	ruff format .
+
+coverage:
+	coverage run -m unittest discover -s tests -v
+	coverage report
+	coverage html
+
+ci: lint test coverage
 
 clean:
 	docker compose down -v

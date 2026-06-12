@@ -12,6 +12,7 @@ from core.gateway import Gateway
 from core.policy import SimpleRegoEngine
 from core.replay import ReplayStore
 from core.drift import DriftTracker
+from core.logging import setup_logging
 from core.red_team import generate_all as generate_red_team_payloads
 from skills.perception import (
     ingest_payload, extract_urls, scan_qr_codes,
@@ -147,6 +148,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
         path = parsed.path
+        logger = logging.getLogger("apcs")
+        logger.info("GET %s from %s", path, self.client_address[0])
 
         if path == "/api/scenarios":
             self._send_json([{"id": k, "name": v["name"], "payload": v["payload"]} for k, v in SCENARIOS.items()])
@@ -165,6 +168,12 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/replay":
             self._send_json({"scan_ids": replay_store.list_ids()})
             return
+        if path == "/api/stats":
+            self._send_json(replay_store.stats())
+            return
+        if path == "/api/trend":
+            self._send_json(replay_store.risk_trend())
+            return
         if path.startswith("/api/replay/"):
             scan_id = path.split("/api/replay/")[1]
             trace = replay_store.get(scan_id)
@@ -175,6 +184,29 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             return
         if path == "/api/red-team":
             self._send_json(generate_red_team_payloads())
+            return
+        if path == "/api/health":
+            self._send_json({
+                "status": "ok",
+                "version": "0.4.0",
+                "uptime": time.time() - start_time,
+                "scans_processed": scan_count,
+                "policies_loaded": len(policy_engine.rules) if hasattr(policy_engine, 'rules') else 0,
+            })
+            return
+        if path == "/api/metrics":
+            metrics = (
+                f"# HELP apcs_scans_total Total scans processed\n"
+                f"# TYPE apcs_scans_total counter\n"
+                f"apcs_scans_total {scan_count}\n"
+                f"# HELP apcs_risk_score_last Last risk score\n"
+                f"# TYPE apcs_risk_score_last gauge\n"
+                f"apcs_risk_score_last {last_risk_score}\n"
+                f"# HELP apcs_up Server uptime in seconds\n"
+                f"# TYPE apcs_up gauge\n"
+                f"apcs_up {time.time() - start_time}\n"
+            )
+            self._send_json({"metrics": metrics})
             return
 
         web_path = os.path.join(WEB_DIR, path.lstrip("/") or "index.html")
@@ -187,7 +219,10 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if not self._check_rate_limit():
             return
         parsed = urlparse(self.path)
-        if parsed.path == "/api/scan":
+        path = parsed.path
+        logger = logging.getLogger("apcs")
+        logger.info("POST %s from %s", path, self.client_address[0])
+        if path == "/api/scan":
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             self._run_scan(body)
@@ -198,7 +233,10 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if not self._check_rate_limit():
             return
         parsed = urlparse(self.path)
-        if parsed.path == "/api/policies":
+        path = parsed.path
+        logger = logging.getLogger("apcs")
+        logger.info("PUT %s from %s", path, self.client_address[0])
+        if path == "/api/policies":
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             content = body.get("policy", "")
@@ -269,10 +307,13 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             replay_store.add_event(scan_id, name, result.get("output", {}), result.get("confidence", 0))
         runtime = build_graph(gateway, on_node_done=on_done)
         try:
+            global scan_count, last_risk_score
             broadcast("scan_start", {"scan_id": scan_id})
             result = runtime.run(entry_payload=body)
             final_output = result["graph_output"]
             risk_score = final_output.get("aggregate_risk", {}).get("risk_score", 0)
+            scan_count += 1
+            last_risk_score = risk_score
             actions = final_output.get("recommend_actions", {}).get("actions", [])
             dominance = {
                 "honey_credentials": final_output.get("deploy_honey_credentials", {}).get("honey_credentials", []),
@@ -340,6 +381,9 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 policy_engine = SimpleRegoEngine(POLICY_FILE)
 replay_store = ReplayStore()
 drift_tracker = DriftTracker()
+start_time = time.time()
+scan_count = 0
+last_risk_score = 0
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
@@ -352,10 +396,10 @@ if __name__ == "__main__":
     parser.add_argument("--key", help="Path to SSL key file")
     parser.add_argument("--bind", default="0.0.0.0", help="Bind address")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--json-logs", action="store_true", help="Output logs in JSON format")
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    setup_logging(verbose=args.verbose, json_output=args.json_logs)
 
     server = ThreadedHTTPServer((args.bind, args.port), APIHandler)
 

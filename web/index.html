@@ -77,6 +77,35 @@
       <div id="replayStep">No replay data</div>
       <pre id="replayPayload">{ }</pre>
     </aside>
+
+    <section class="panel analytics-panel">
+      <h2>Analytics</h2>
+      <div class="analytics-grid">
+        <div class="metric-card">
+          <span class="metric-label">Total Scans</span>
+          <span class="metric-value" id="totalScans">-</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Avg Risk</span>
+          <span class="metric-value" id="avgRisk">-</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Allow Rate</span>
+          <span class="metric-value" id="allowRate">-</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Block Rate</span>
+          <span class="metric-value" id="blockRate">-</span>
+        </div>
+      </div>
+      <div id="trendChart">
+        <svg id="trendSvg" width="100%" height="120"></svg>
+      </div>
+      <div id="alertHistory">
+        <h3>Recent Alerts</h3>
+        <div id="alertList"></div>
+      </div>
+    </section>
   </main>
 </div>
 

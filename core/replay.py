@@ -83,6 +83,53 @@ class ReplayStore:
             rows = self.conn.execute("SELECT scan_id FROM replay_traces").fetchall()
             return [r[0] for r in rows]
 
+    def stats(self) -> Dict[str, Any]:
+        rows = self.conn.execute("SELECT data FROM replay_traces").fetchall()
+        total = len(rows)
+        if total == 0:
+            return {"total_scans": 0, "avg_risk": 0, "avg_confidence": 0, "allow_count": 0, "deny_count": 0, "actions_breakdown": {}}
+
+        risks = []
+        confs = []
+        allows = 0
+        denies = 0
+        actions_count = {}
+
+        for row in rows:
+            trace = json.loads(row[0])
+            risks.append(trace.get("risk_score", 0))
+            confs.append(trace.get("confidence", 0))
+            if trace.get("decision") == "ALLOW":
+                allows += 1
+            else:
+                denies += 1
+            for action in trace.get("actions", []):
+                actions_count[action] = actions_count.get(action, 0) + 1
+
+        return {
+            "total_scans": total,
+            "avg_risk": round(sum(risks) / len(risks), 1) if risks else 0,
+            "avg_confidence": round(sum(confs) / len(confs), 1) if confs else 0,
+            "allow_count": allows,
+            "deny_count": denies,
+            "actions_breakdown": actions_count,
+        }
+
+    def risk_trend(self, limit=20) -> List[Dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT data FROM replay_traces ORDER BY rowid DESC LIMIT ?", (limit,)
+        ).fetchall()
+        trend = []
+        for row in reversed(rows):
+            trace = json.loads(row[0])
+            trend.append({
+                "scan_id": trace["scan_id"],
+                "risk_score": trace.get("risk_score", 0),
+                "decision": trace.get("decision", ""),
+                "timestamp": trace.get("timestamp", 0),
+            })
+        return trend
+
     def to_json(self, scan_id: str) -> Optional[str]:
         trace = self.get(scan_id)
         return json.dumps(trace, indent=2) if trace else None
