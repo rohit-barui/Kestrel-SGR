@@ -9,7 +9,7 @@
 - **Lightweight Rego policy engine** – Python‑based OPA evaluator.
 - **Perception plane** – Email/SMS/voice ingestion, QR‑code scanning, archive‑password extraction, WHOIS caching, typo‑squatting detection.
 - **Decision plane** – Weighted risk scoring, veto/override logic, action recommendation.
-- **Dominance plane** – Active honey credentials, deception payloads, link rewriting, containment actions.
+- **ML Scorer** – Optional machine‑learning based risk estimation displayed on the dashboard (ML Confidence).
 - **Dashboard** – Glass‑morphic web UI to run preset threat scenarios, visualise the skill graph and view forensics.
 - **Transaction saga & gateway** – Automatic rollback of side‑effects on failure.
 
@@ -17,8 +17,8 @@
 
 ## Quick Start
 ```bash
-# Clone the repository (already done under Kestrel‑SGR‑repo)
-cd "C:/Users/user/Documents/projects/Kestrel SGR/Kestrel-SGR-repo"
+# Clone the repository (already done under Kestrel‑SGR)
+cd "C:/Users/user/Documents/projects/Kestrel-SGR"
 
 # Install dependencies (Python 3.9+)
 python -m venv .venv
