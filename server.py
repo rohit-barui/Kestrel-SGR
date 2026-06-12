@@ -1,0 +1,257 @@
+import json, http.server, socketserver, os, sys, threading, time, uuid, io
+from urllib.parse import urlparse
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from core.engine import SkillNode, SkillGraphRuntime
+from core.gateway import Gateway
+from core.policy import SimpleRegoEngine
+from skills.perception import (
+    ingest_payload, extract_urls, scan_qr_codes,
+    extract_archive_password, whois_lookup, enrich_dns,
+    detect_typo_squatting
+)
+from skills.decision import (
+    aggregate_risk, apply_veto, recommend_actions
+)
+from skills.dominance import (
+    deploy_honey_credentials, rewrite_links, containment_actions
+)
+
+PORT = 8080
+WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
+POLICY_FILE = os.path.join(os.path.dirname(__file__), "policies", "remediation.rego")
+
+SCENARIOS = {
+    "ceo_fraud": {
+        "name": "CEO Fraud (Vishing/Email Combo)",
+        "payload": {
+            "email": "From: ceo@cornpany.com\nSubject: Urgent wire transfer\n\nHi, I need $50K wired ASAP. Password: urgent123"
+        }
+    },
+    "credential_harvester": {
+        "name": "Credential Harvester (Lookalike Domain)",
+        "payload": {
+            "email": "From: support@secure-login.xyz\nSubject: Verify account\n\nClick here: https://secure-login.xyz/verify [QR:https://phish.xyz/qr]\npassword: verify2024"
+        }
+    },
+    "malware_drop": {
+        "name": "Malware Drop (Invoice Attachment)",
+        "payload": {
+            "email": "From: billing@mycompay.co\nSubject: Overdue invoice\n\nInvoice attached. password: inv123\nDownload: https://mycompay.co/invoice.exe"
+        }
+    },
+    "clean_alert": {
+        "name": "Clean Alert (Normal Internal Email)",
+        "payload": {
+            "email": "From: hr@company.com\nSubject: Meeting reminder\n\nTeam meeting at 3pm today."
+        }
+    }
+}
+
+sse_clients = []
+sse_lock = threading.Lock()
+
+def broadcast(event, data):
+    msg = f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+    with sse_lock:
+        dead = []
+        for q in sse_clients:
+            try:
+                q.put(msg)
+            except:
+                dead.append(q)
+        for q in dead:
+            sse_clients.remove(q)
+
+def build_graph(gateway, on_node_done=None):
+    return SkillGraphRuntime(nodes=[
+        SkillNode(name="ingest", func=_wrap(ingest_payload, "ingest", on_node_done)),
+        SkillNode(name="extract_urls", func=_wrap(extract_urls, "extract_urls", on_node_done), deps=["ingest"]),
+        SkillNode(name="scan_qr_codes", func=_wrap(scan_qr_codes, "scan_qr_codes", on_node_done), deps=["ingest"]),
+        SkillNode(name="extract_archive_password", func=_wrap(extract_archive_password, "extract_archive_password", on_node_done), deps=["ingest"]),
+        SkillNode(name="whois_lookup", func=_wrap(whois_lookup, "whois_lookup", on_node_done), deps=["extract_urls"]),
+        SkillNode(name="enrich_dns", func=_wrap(enrich_dns, "enrich_dns", on_node_done), deps=["extract_urls"]),
+        SkillNode(name="detect_typo_squatting", func=_wrap(detect_typo_squatting, "detect_typo_squatting", on_node_done), deps=["extract_urls"]),
+        SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting"]),
+        SkillNode(name="apply_veto", func=_wrap(apply_veto, "apply_veto", on_node_done), deps=["aggregate_risk"]),
+        SkillNode(name="recommend_actions", func=_wrap(recommend_actions, "recommend_actions", on_node_done), deps=["apply_veto"]),
+        SkillNode(name="deploy_honey_credentials", func=_wrap(deploy_honey_credentials, "deploy_honey_credentials", on_node_done), deps=["recommend_actions", "apply_veto"]),
+        SkillNode(name="rewrite_links", func=_wrap(rewrite_links, "rewrite_links", on_node_done), deps=["recommend_actions", "extract_urls"]),
+        SkillNode(name="containment_actions", func=_wrap(containment_actions, "containment_actions", on_node_done), deps=["recommend_actions", "apply_veto"]),
+    ], gateway=gateway)
+
+def _wrap(fn, name, on_node_done):
+    if on_node_done is None:
+        return fn
+    def wrapper(payload):
+        result = fn(payload)
+        on_node_done(name, result)
+        return result
+    return wrapper
+
+class SSEQueue:
+    def __init__(self):
+        self.queue = []
+        self.event = threading.Event()
+
+    def put(self, msg):
+        self.queue.append(msg)
+        self.event.set()
+
+    def get(self, timeout=30):
+        self.event.wait(timeout)
+        if not self.queue:
+            return None
+        msg = self.queue.pop(0)
+        if not self.queue:
+            self.event.clear()
+        return msg
+
+class APIHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == "/api/scenarios":
+            self._send_json([{"id": k, "name": v["name"], "payload": v["payload"]} for k, v in SCENARIOS.items()])
+            return
+        if path == "/api/policies":
+            try:
+                with open(POLICY_FILE, "r") as f:
+                    content = f.read()
+                self._send_json({"policy": content})
+            except FileNotFoundError:
+                self._send_json({"policy": ""}, 404)
+            return
+        if path == "/events":
+            self._handle_sse()
+            return
+
+        web_path = os.path.join(WEB_DIR, path.lstrip("/") or "index.html")
+        if os.path.isfile(web_path):
+            self._serve_static(web_path)
+        else:
+            self._serve_static(os.path.join(WEB_DIR, "index.html"))
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/scan":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            self._run_scan(body)
+            return
+        self._send_json({"error": "Not found"}, 404)
+
+    def do_PUT(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/policies":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            content = body.get("policy", "")
+            with open(POLICY_FILE, "w") as f:
+                f.write(content)
+            global policy_engine
+            policy_engine = SimpleRegoEngine(POLICY_FILE)
+            self._send_json({"status": "updated"})
+            return
+        self._send_json({"error": "Not found"}, 404)
+
+    def _handle_sse(self):
+        q = SSEQueue()
+        with sse_lock:
+            sse_clients.append(q)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        try:
+            while True:
+                msg = q.get(timeout=60)
+                if msg is None:
+                    break
+                try:
+                    self.wfile.write(msg)
+                    self.wfile.flush()
+                except:
+                    break
+        finally:
+            with sse_lock:
+                if q in sse_clients:
+                    sse_clients.remove(q)
+
+    def _run_scan(self, body):
+        scan_id = uuid.uuid4().hex[:8]
+        broadcast("scan_start", {"scan_id": scan_id})
+        gateway = Gateway()
+        def on_done(name, result):
+            broadcast("skill_done", {"scan_id": scan_id, "node": name, "output": result.get("output", {}), "confidence": result.get("confidence", 0)})
+        runtime = build_graph(gateway, on_node_done=on_done)
+        try:
+            broadcast("scan_start", {"scan_id": scan_id})
+            result = runtime.run(entry_payload=body)
+            final_output = result["graph_output"]
+            risk_score = final_output.get("aggregate_risk", {}).get("risk_score", 0)
+            actions = final_output.get("recommend_actions", {}).get("actions", [])
+            dominance = {
+                "honey_credentials": final_output.get("deploy_honey_credentials", {}).get("honey_credentials", []),
+                "rewritten_urls": final_output.get("rewrite_links", {}).get("rewritten_urls", {}),
+                "blocked_ips": final_output.get("containment_actions", {}).get("blocked_ips", []),
+                "quarantined": final_output.get("containment_actions", {}).get("quarantined", False),
+                "mfa_reset": final_output.get("containment_actions", {}).get("mfa_reset", False),
+            }
+            confidence = result["aggregated_confidence"]
+            is_allowed = True
+            try:
+                is_allowed = policy_engine.evaluate({"risk_score": risk_score, "confidence": confidence, "urls": final_output.get("extract_urls", {}).get("urls", []), "archive_password": final_output.get("extract_archive_password", {}).get("archive_password", ""), "is_whitelisted": False})
+            except Exception:
+                pass
+            decision = "ALLOW" if is_allowed else "DENY"
+            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions})
+            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
+        except Exception as e:
+            broadcast("run_error", {"scan_id": scan_id, "error": str(e)})
+            self._send_json({"scan_id": scan_id, "error": str(e)}, 500)
+
+    def _send_json(self, data, code=200):
+        body = json.dumps(data).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_static(self, path):
+        ext = os.path.splitext(path)[1]
+        types = {".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon"}
+        ctype = types.get(ext, "application/octet-stream")
+        try:
+            with open(path, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        except FileNotFoundError:
+            self._send_json({"error": "Not found"}, 404)
+
+    def log_message(self, format, *args):
+        pass
+
+policy_engine = SimpleRegoEngine(POLICY_FILE)
+
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+if __name__ == "__main__":
+    server = ThreadedHTTPServer(("0.0.0.0", PORT), APIHandler)
+    print(f"Serving HTTP on localhost port {PORT} ...")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.shutdown()

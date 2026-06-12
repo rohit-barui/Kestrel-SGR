@@ -21,60 +21,35 @@ def _default_confidence() -> int:
 # ---------------------------------------------------------------------------
 
 def aggregate_risk(perception_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Compute a weighted risk score from perception outputs.
-
-    Simple heuristic:
-    - Each extracted URL adds 20 points.
-    - Presence of a QR‑code URL adds 15 points.
-    - Detected archive password adds 10 points.
-    - WHOIS creation date < 5 years ago adds 10 points.
-    - Typo‑squatting flag adds 25 points.
-    The total is capped at 100.
-    """
-    output = perception_payload.get("output", {})
+    urls = perception_payload.get("extract_urls", {}).get("urls", [])
+    qr_urls = perception_payload.get("scan_qr_codes", {}).get("qr_urls", [])
+    archive_pwd = perception_payload.get("extract_archive_password", {}).get("archive_password", "")
+    whois = perception_payload.get("whois_lookup", {}).get("whois", {})
+    typo = perception_payload.get("detect_typo_squatting", {}).get("typo_squatting", [])
     score = 0
-    # URLs
-    if output.get("urls"):
-        score += 20 * len(output["urls"])
-    # QR URLs
-    if output.get("qr_urls"):
-        score += 15 * len(output["qr_urls"])
-    # Archive password
-    if output.get("archive_password"):
+    if urls:
+        score += 20 * len(urls)
+    if qr_urls:
+        score += 15 * len(qr_urls)
+    if archive_pwd:
         score += 10
-    # WHOIS recent creation
-    whois = output.get("whois", {})
     for entry in whois.values():
-        # fake check – if year ends with an odd digit treat as recent
         if entry.get("creation_date", "")[3] in "13579":
             score += 10
-    # Typo squatting
-    if output.get("typo_squatting"):
-        score += 25 * len(output["typo_squatting"])
-    # Cap
+    if typo:
+        score += 25 * len(typo)
     risk_score = min(score, 100)
     return {"output": {"risk_score": risk_score}, "confidence": _default_confidence()}
 
 
 def apply_veto(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Veto overrides – if any confidence is 100 from a high‑confidence feed,
-    force the final confidence to 100 regardless of other scores.
-    """
-    # In this minimal implementation we just look for a flag
-    veto = decision_payload.get("output", {}).get("veto", False)
-    confidence = 100 if veto else decision_payload.get("confidence", 0)
-    return {"output": {"final_confidence": confidence}, "confidence": confidence}
+    risk = decision_payload.get("aggregate_risk", {}).get("risk_score", 0)
+    confidence = 100 if risk >= 70 else 50
+    return {"output": {"risk_score": risk, "final_confidence": confidence}, "confidence": confidence}
 
 
 def recommend_actions(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Map risk score to remediation actions.
-
-    - 0‑30 : ``allow`` (no action).
-    - 31‑70 : ``quarantine``.
-    - 71‑100 : ``block``.
-    Returns ``actions`` list for the Dominance plane to consume.
-    """
-    risk = decision_payload.get("output", {}).get("risk_score", 0)
+    risk = decision_payload.get("apply_veto", {}).get("risk_score", 0)
     if risk <= 30:
         actions = ["allow"]
     elif risk <= 70:

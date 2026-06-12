@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APCS Cockpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">
+      <span class="logo-icon">&#9889;</span>
+      <h1>APCS Cockpit</h1>
+    </div>
+    <div class="status-badge" id="statusBadge">Idle</div>
+  </header>
+
+  <main>
+    <aside class="panel control-panel">
+      <h2>Controls</h2>
+      <div class="control-group">
+        <label for="scenarioSelect">Scenario</label>
+        <select id="scenarioSelect">
+          <option value="">-- Select Scenario --</option>
+        </select>
+      </div>
+      <button id="runBtn" disabled>Run</button>
+      <div class="payload-preview">
+        <h3>Payload</h3>
+        <pre id="payloadPreview">{ }</pre>
+      </div>
+    </aside>
+
+    <section class="panel graph-panel">
+      <h2>Skill Graph</h2>
+      <div id="graphContainer">
+        <svg id="graphSvg"></svg>
+      </div>
+    </section>
+
+    <aside class="panel metrics-panel">
+      <h2>Metrics</h2>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <span class="metric-label">Risk Score</span>
+          <span class="metric-value" id="riskScore">-</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Policy</span>
+          <span class="metric-value" id="policyStatus">-</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Confidence</span>
+          <span class="metric-value" id="confidence">-</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Actions</span>
+          <span class="metric-value" id="actions">-</span>
+        </div>
+      </div>
+      <div class="action-log">
+        <h3>Action Log</h3>
+        <div id="logEntries"></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
