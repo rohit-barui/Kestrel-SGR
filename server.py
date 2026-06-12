@@ -12,13 +12,14 @@ from core.red_team import generate_all as generate_red_team_payloads
 from skills.perception import (
     ingest_payload, extract_urls, scan_qr_codes,
     extract_archive_password, whois_lookup, enrich_dns,
-    detect_typo_squatting
+    detect_typo_squatting, extract_entities
 )
 from skills.decision import (
-    aggregate_risk, apply_veto, recommend_actions
+    aggregate_risk, apply_veto, recommend_actions, validate_spf_dkim
 )
 from skills.dominance import (
-    deploy_honey_credentials, rewrite_links, containment_actions
+    deploy_honey_credentials, rewrite_links, containment_actions,
+    block_ip, quarantine_email, trigger_mfa_reset
 )
 
 PORT = 8080
@@ -76,12 +77,17 @@ def build_graph(gateway, on_node_done=None):
         SkillNode(name="whois_lookup", func=_wrap(whois_lookup, "whois_lookup", on_node_done), deps=["extract_urls"]),
         SkillNode(name="enrich_dns", func=_wrap(enrich_dns, "enrich_dns", on_node_done), deps=["extract_urls"]),
         SkillNode(name="detect_typo_squatting", func=_wrap(detect_typo_squatting, "detect_typo_squatting", on_node_done), deps=["extract_urls"]),
+        SkillNode(name="extract_entities", func=_wrap(extract_entities, "extract_entities", on_node_done), deps=["ingest"]),
+        SkillNode(name="validate_spf_dkim", func=_wrap(validate_spf_dkim, "validate_spf_dkim", on_node_done), deps=["ingest"]),
         SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting"]),
         SkillNode(name="apply_veto", func=_wrap(apply_veto, "apply_veto", on_node_done), deps=["aggregate_risk"]),
         SkillNode(name="recommend_actions", func=_wrap(recommend_actions, "recommend_actions", on_node_done), deps=["apply_veto"]),
         SkillNode(name="deploy_honey_credentials", func=_wrap(deploy_honey_credentials, "deploy_honey_credentials", on_node_done), deps=["recommend_actions", "apply_veto"]),
         SkillNode(name="rewrite_links", func=_wrap(rewrite_links, "rewrite_links", on_node_done), deps=["recommend_actions", "extract_urls"]),
         SkillNode(name="containment_actions", func=_wrap(containment_actions, "containment_actions", on_node_done), deps=["recommend_actions", "apply_veto"]),
+        SkillNode(name="block_ip", func=_wrap(block_ip, "block_ip", on_node_done), deps=["recommend_actions"]),
+        SkillNode(name="quarantine_email", func=_wrap(quarantine_email, "quarantine_email", on_node_done), deps=["recommend_actions"]),
+        SkillNode(name="trigger_mfa_reset", func=_wrap(trigger_mfa_reset, "trigger_mfa_reset", on_node_done), deps=["recommend_actions", "apply_veto"]),
     ], gateway=gateway)
 
 def _wrap(fn, name, on_node_done):
@@ -228,6 +234,21 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 pass
             decision = "ALLOW" if is_allowed else "DENY"
             replay_store.store(scan_id, body, final_output, decision, risk_score, confidence, actions)
+
+            # Drift tracking – feedback loop
+            if decision == "ALLOW" and risk_score > 70:
+                drift_tracker.record_fn("remediation_rule")
+                broadcast("drift_update", {"type": "false_negative", "decision": decision, "risk_score": risk_score})
+            elif decision == "DENY" and risk_score < 30:
+                drift_tracker.record_fp("remediation_rule")
+                broadcast("drift_update", {"type": "false_positive", "decision": decision, "risk_score": risk_score})
+            elif decision == "ALLOW" and risk_score <= 70:
+                drift_tracker.record_tn("remediation_rule")
+            elif decision == "DENY" and risk_score >= 30:
+                drift_tracker.record_tp("remediation_rule")
+            drift_status = drift_tracker.stats("remediation_rule")
+            broadcast("drift_status", {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status})
+
             broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
             self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
         except Exception as e:

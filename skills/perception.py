@@ -18,6 +18,218 @@ import json
 import hashlib
 from typing import Dict, Any, List
 
+from core.graph import IdentityGraph
+
+# ---------------------------------------------------------------------------
+# JSON Schema constants for input/output validation
+# ---------------------------------------------------------------------------
+
+INGEST_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "__entry__": {
+            "type": "object",
+            "properties": {
+                "email": {"type": "string"},
+                "sms": {"type": "string"},
+                "voice": {"type": "string"}
+            }
+        }
+    },
+    "required": ["__entry__"]
+}
+
+INGEST_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string"},
+                "content": {"type": "string"}
+            },
+            "required": ["type", "content"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+EXTRACT_URLS_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ingest": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string"},
+                "content": {"type": "string"}
+            }
+        }
+    },
+    "required": ["ingest"]
+}
+
+EXTRACT_URLS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}},
+                "domains": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["urls", "domains"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+SCAN_QR_CODES_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ingest": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string"},
+                "content": {"type": "string"}
+            }
+        }
+    },
+    "required": ["ingest"]
+}
+
+SCAN_QR_CODES_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "qr_urls": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["qr_urls"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+EXTRACT_ARCHIVE_PASSWORD_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "ingest": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string"},
+                "content": {"type": "string"}
+            }
+        }
+    },
+    "required": ["ingest"]
+}
+
+EXTRACT_ARCHIVE_PASSWORD_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "archive_password": {"type": "string"}
+            },
+            "required": ["archive_password"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+WHOIS_LOOKUP_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "extract_urls": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}},
+                "domains": {"type": "array", "items": {"type": "string"}}
+            }
+        }
+    },
+    "required": ["extract_urls"]
+}
+
+WHOIS_LOOKUP_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "whois": {"type": "object"}
+            },
+            "required": ["whois"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+ENRICH_DNS_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "extract_urls": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}},
+                "domains": {"type": "array", "items": {"type": "string"}}
+            }
+        }
+    },
+    "required": ["extract_urls"]
+}
+
+ENRICH_DNS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "dns": {"type": "object"}
+            },
+            "required": ["dns"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+DETECT_TYPO_SQUATTING_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "extract_urls": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}},
+                "domains": {"type": "array", "items": {"type": "string"}}
+            }
+        }
+    },
+    "required": ["extract_urls"]
+}
+
+DETECT_TYPO_SQUATTING_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "typo_squatting": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["typo_squatting"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
 # ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
@@ -114,5 +326,17 @@ def detect_typo_squatting(payload: Dict[str, Any]) -> Dict[str, Any]:
                 suspicious.append(d)
                 break
     return {"output": {"typo_squatting": suspicious}, "confidence": 75 if suspicious else 20}
+
+identity_graph = IdentityGraph()
+
+def extract_entities(payload):
+    content = payload.get("ingest", {}).get("content", "")
+    emails = re.findall(r"[\w.+-]+@[\w-]+\.[\w.-]+", content)
+    domains = re.findall(r"https?://([\w.-]+)", content)
+    for e in emails:
+        identity_graph.add_entity(e, "email_address")
+    for d in domains:
+        identity_graph.add_entity(d, "domain")
+    return {"output": {"entities_extracted": len(emails) + len(domains), "emails": emails, "domains": domains}, "confidence": 80}
 
 # End of skills/perception.py

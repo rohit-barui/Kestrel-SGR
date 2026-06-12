@@ -6,12 +6,17 @@ const GRAPH_NODES = [
   { id: "whois_lookup", plane: "perception", label: "WHOIS", deps: ["extract_urls"] },
   { id: "enrich_dns", plane: "perception", label: "DNS Enrich", deps: ["extract_urls"] },
   { id: "detect_typo_squatting", plane: "perception", label: "Typo Detect", deps: ["extract_urls"] },
+  { id: "extract_entities", plane: "perception", label: "Entities", deps: ["ingest"] },
+  { id: "validate_spf_dkim", plane: "perception", label: "SPF/DKIM", deps: ["ingest"] },
   { id: "aggregate_risk", plane: "decision", label: "Risk Score", deps: ["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting"] },
   { id: "apply_veto", plane: "decision", label: "Veto", deps: ["aggregate_risk"] },
   { id: "recommend_actions", plane: "decision", label: "Actions", deps: ["apply_veto"] },
   { id: "deploy_honey_credentials", plane: "dominance", label: "Honey Creds", deps: ["recommend_actions", "apply_veto"] },
   { id: "rewrite_links", plane: "dominance", label: "Rewrite Links", deps: ["recommend_actions", "extract_urls"] },
   { id: "containment_actions", plane: "dominance", label: "Containment", deps: ["recommend_actions", "apply_veto"] },
+  { id: "block_ip", plane: "dominance", label: "Block IP", deps: ["recommend_actions"] },
+  { id: "quarantine_email", plane: "dominance", label: "Quarantine Email", deps: ["recommend_actions"] },
+  { id: "trigger_mfa_reset", plane: "dominance", label: "MFA Reset", deps: ["recommend_actions", "apply_veto"] },
 ];
 
 const PLANE_COLORS = {
@@ -37,6 +42,14 @@ const policyStatusEl = document.getElementById("policyStatus");
 const confidenceEl = document.getElementById("confidence");
 const actionsEl = document.getElementById("actions");
 const logEntries = document.getElementById("logEntries");
+const replayBtn = document.getElementById("replayBtn");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const replayStep = document.getElementById("replayStep");
+const replayPayload = document.getElementById("replayPayload");
+
+let replayEvents = [];
+let replayIndex = -1;
 
 function log(msg, type = "info") {
   const entry = document.createElement("div");
@@ -117,21 +130,24 @@ function resetGraph() {
 }
 
 function updateNodeColor(id, done = false, error = false) {
-  const rect = document.querySelector(`.node-rect[data-id="${id}"]`);
-  if (!rect) return;
   const node = GRAPH_NODES.find((n) => n.id === id);
   if (!node) return;
   const colors = PLANE_COLORS[node.plane];
+  let fill, stroke;
   if (error) {
-    rect.setAttribute("fill", "#7F1D1D");
-    rect.setAttribute("stroke", "#F43F5E");
+    fill = "#7F1D1D";
+    stroke = "#F43F5E";
   } else if (done) {
-    rect.setAttribute("fill", colors.done);
-    rect.setAttribute("stroke", colors.done);
+    fill = colors.done;
+    stroke = colors.done;
   } else {
-    rect.setAttribute("fill", colors.fill);
-    rect.setAttribute("stroke", colors.stroke);
+    fill = colors.fill;
+    stroke = colors.stroke;
   }
+  d3.select(`.node-rect[data-id="${id}"]`)
+    .transition().duration(300)
+    .attr("fill", fill)
+    .attr("stroke", stroke);
 }
 
 function updateAllNodeColors() {
@@ -145,10 +161,11 @@ function setupSSE() {
   const evtSource = new EventSource("/events");
   evtSource.addEventListener("skill_done", (e) => {
     const data = JSON.parse(e.data);
-    state.nodeStatus[data.node] = "done";
-    updateNodeColor(data.node, true);
+    const isError = data.error || data.output?.error;
+    state.nodeStatus[data.node] = isError ? "error" : "done";
+    updateNodeColor(data.node, !isError, !!isError);
     activateEdgesForNode(data.node);
-    log(`${data.node} done (confidence: ${data.confidence})`, "success");
+    log(`${data.node} done (confidence: ${data.confidence})`, isError ? "error" : "success");
   });
   evtSource.addEventListener("run_complete", (e) => {
     const data = JSON.parse(e.data);
@@ -167,6 +184,11 @@ function setupSSE() {
     }
     statusBadge.textContent = data.decision;
     statusBadge.style.background = data.decision === "ALLOW" ? "var(--accent-emerald)" : "var(--accent-rose)";
+    replayBtn.disabled = false;
+    replayEvents = [];
+    replayIndex = -1;
+    replayStep.textContent = "Replay ready";
+    replayPayload.textContent = "{ }";
     log(`Run complete: ${data.decision} (risk: ${data.risk_score})`, data.decision === "ALLOW" ? "success" : "action");
   });
   evtSource.addEventListener("run_error", (e) => {
@@ -184,6 +206,51 @@ function setupSSE() {
   };
 }
 
+replayBtn.addEventListener("click", async () => {
+  if (!state.scanId) return;
+  replayBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/replay/${state.scanId}`);
+    const data = await res.json();
+    replayEvents = data.events || [];
+    replayIndex = -1;
+    if (replayEvents.length > 0) {
+      prevBtn.disabled = false;
+      nextBtn.disabled = false;
+      replayStep.textContent = `0 / ${replayEvents.length}`;
+      updateReplay();
+    } else {
+      replayStep.textContent = "No events found";
+    }
+  } catch (e) {
+    log("Replay load failed", "error");
+  }
+  replayBtn.disabled = false;
+});
+
+prevBtn.addEventListener("click", () => {
+  if (replayIndex > 0) {
+    replayIndex--;
+    updateReplay();
+  }
+});
+
+nextBtn.addEventListener("click", () => {
+  if (replayIndex < replayEvents.length - 1) {
+    replayIndex++;
+    updateReplay();
+  }
+});
+
+function updateReplay() {
+  if (replayIndex < 0 || replayIndex >= replayEvents.length) return;
+  const evt = replayEvents[replayIndex];
+  replayStep.textContent = `${replayIndex + 1} / ${replayEvents.length} - ${evt.node}`;
+  replayPayload.textContent = JSON.stringify(evt.output, null, 2);
+  prevBtn.disabled = replayIndex <= 0;
+  nextBtn.disabled = replayIndex >= replayEvents.length - 1;
+}
+
 function activateEdgesForNode(nodeId) {
   const node = GRAPH_NODES.find((n) => n.id === nodeId);
   if (!node) return;
@@ -195,77 +262,97 @@ function activateEdgesForNode(nodeId) {
 }
 
 function drawGraph() {
-  const svg = document.getElementById("graphSvg");
+  const svg = d3.select("#graphSvg");
   const container = document.getElementById("graphContainer");
   const width = container.clientWidth || 600;
   const height = container.clientHeight || 400;
 
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.attr("viewBox", `0 0 ${width} ${height}`);
 
-  const layers = [[], [], []];
-  GRAPH_NODES.forEach((n) => {
-    if (n.plane === "perception") layers[0].push(n);
-    else if (n.plane === "decision") layers[1].push(n);
-    else layers[2].push(n);
-  });
-
-  const nodePositions = {};
-  const layerGap = width / 4;
-  const nodeW = 120;
-  const nodeH = 36;
-
-  layers.forEach((layer, li) => {
-    const cx = layerGap * (li + 1);
-    const startY = (height - (layer.length * (nodeH + 20) - 20)) / 2;
-    layer.forEach((node, ni) => {
-      nodePositions[node.id] = { x: cx - nodeW / 2, y: startY + ni * (nodeH + 20) };
-    });
-  });
-
+  const links = [];
   GRAPH_NODES.forEach((node) => {
     node.deps.forEach((dep) => {
-      const from = nodePositions[dep];
-      const to = nodePositions[node.id];
-      if (!from || !to) return;
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      const edgeId = `${dep}->${node.id}`;
-      line.setAttribute("data-id", edgeId);
-      line.setAttribute("class", "edge-line");
-      line.setAttribute("x1", from.x + nodeW / 2);
-      line.setAttribute("y1", from.y + nodeH / 2);
-      line.setAttribute("x2", to.x + nodeW / 2);
-      line.setAttribute("y2", to.y + nodeH / 2);
-      svg.appendChild(line);
+      links.push({ source: dep, target: node.id, id: `${dep}->${node.id}` });
     });
   });
 
-  GRAPH_NODES.forEach((node) => {
-    const pos = nodePositions[node.id];
-    if (!pos) return;
-    const colors = PLANE_COLORS[node.plane];
-    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("data-id", node.id);
-    rect.setAttribute("class", "node-rect");
-    rect.setAttribute("x", pos.x);
-    rect.setAttribute("y", pos.y);
-    rect.setAttribute("width", nodeW);
-    rect.setAttribute("height", nodeH);
-    rect.setAttribute("fill", colors.fill);
-    rect.setAttribute("stroke", colors.stroke);
-    g.appendChild(rect);
+  const nodes = GRAPH_NODES.map((n) => ({ ...n }));
 
-    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("class", "node-label");
-    label.setAttribute("x", pos.x + nodeW / 2);
-    label.setAttribute("y", pos.y + nodeH / 2 + 4);
-    label.setAttribute("text-anchor", "middle");
-    label.setAttribute("dominant-baseline", "central");
-    label.textContent = node.label;
-    g.appendChild(label);
+  svg.selectAll("g.graph-group").remove();
+  const g = svg.append("g").attr("class", "graph-group");
 
-    svg.appendChild(g);
+  const zoom = d3.zoom()
+    .scaleExtent([0.3, 3])
+    .on("zoom", (event) => {
+      g.attr("transform", event.transform);
+    });
+  svg.call(zoom);
+
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id((d) => d.id).distance(180))
+    .force("charge", d3.forceManyBody().strength(-400))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("x", d3.forceX(width / 2).strength(0.05))
+    .force("y", d3.forceY(height / 2).strength(0.05));
+
+  const link = g.append("g")
+    .selectAll("line")
+    .data(links)
+    .join("line")
+    .attr("data-id", (d) => d.id)
+    .attr("class", "edge-line");
+
+  const nodeGroup = g.append("g")
+    .selectAll("g")
+    .data(nodes)
+    .join("g")
+    .call(d3.drag()
+      .on("start", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on("drag", (event, d) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on("end", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      }));
+
+  nodeGroup.append("rect")
+    .attr("data-id", (d) => d.id)
+    .attr("class", "node-rect")
+    .attr("width", 120)
+    .attr("height", 36)
+    .attr("x", -60)
+    .attr("y", -18)
+    .attr("rx", 8)
+    .attr("ry", 8)
+    .attr("fill", (d) => PLANE_COLORS[d.plane].fill)
+    .attr("stroke", (d) => PLANE_COLORS[d.plane].stroke)
+    .attr("stroke-width", 2);
+
+  nodeGroup.append("text")
+    .attr("class", "node-label")
+    .attr("text-anchor", "middle")
+    .attr("dominant-baseline", "central")
+    .attr("dy", 4)
+    .text((d) => d.label);
+
+  simulation.on("tick", () => {
+    link
+      .attr("x1", (d) => d.source.x)
+      .attr("y1", (d) => d.source.y)
+      .attr("x2", (d) => d.target.x)
+      .attr("y2", (d) => d.target.y);
+    nodeGroup
+      .attr("transform", (d) => `translate(${d.x},${d.y})`);
   });
+
+  window.__simulation = simulation;
 }
 
 window.addEventListener("load", () => {

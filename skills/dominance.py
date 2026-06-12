@@ -1,5 +1,125 @@
 from typing import Dict, Any, List
 
+# ---------------------------------------------------------------------------
+# JSON Schema constants for input/output validation
+# ---------------------------------------------------------------------------
+
+DEPLOY_HONEY_CREDENTIALS_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "recommend_actions": {
+            "type": "object",
+            "properties": {
+                "actions": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "apply_veto": {
+            "type": "object",
+            "properties": {
+                "risk_score": {"type": "integer"},
+                "final_confidence": {"type": "integer"}
+            }
+        }
+    },
+    "required": ["recommend_actions", "apply_veto"]
+}
+
+DEPLOY_HONEY_CREDENTIALS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "honey_credentials": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "user": {"type": "string"},
+                            "domain": {"type": "string"}
+                        }
+                    }
+                }
+            },
+            "required": ["honey_credentials"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+REWRITE_LINKS_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "recommend_actions": {
+            "type": "object",
+            "properties": {
+                "actions": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "extract_urls": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}},
+                "domains": {"type": "array", "items": {"type": "string"}}
+            }
+        }
+    },
+    "required": ["recommend_actions", "extract_urls"]
+}
+
+REWRITE_LINKS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "rewritten_urls": {"type": "object"}
+            },
+            "required": ["rewritten_urls"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
+CONTAINMENT_ACTIONS_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "recommend_actions": {
+            "type": "object",
+            "properties": {
+                "actions": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "apply_veto": {
+            "type": "object",
+            "properties": {
+                "risk_score": {"type": "integer"},
+                "final_confidence": {"type": "integer"}
+            }
+        }
+    },
+    "required": ["recommend_actions", "apply_veto"]
+}
+
+CONTAINMENT_ACTIONS_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "output": {
+            "type": "object",
+            "properties": {
+                "blocked_ips": {"type": "array", "items": {"type": "string"}},
+                "quarantined": {"type": "boolean"},
+                "mfa_reset": {"type": "boolean"}
+            },
+            "required": ["blocked_ips", "quarantined", "mfa_reset"]
+        },
+        "confidence": {"type": "integer"}
+    },
+    "required": ["output"]
+}
+
 def rollback_noop(params: Dict[str, Any]):
     pass
 
@@ -26,6 +146,30 @@ def rewrite_links(payload: Dict[str, Any]) -> Dict[str, Any]:
         "output": {"rewritten_urls": rewritten},
         "confidence": 85 if rewritten else 15,
         "side_effects": [{"action": "rewrite_links", "params": {"rewritten": rewritten}, "rollback": rollback_noop}]
+    }
+
+def block_ip(payload: Dict[str, Any]) -> Dict[str, Any]:
+    ip_address = "10.0.0.1"
+    return {
+        "output": {"blocked_ip": ip_address, "blocked": True},
+        "confidence": 90,
+        "side_effects": [{"action": "block_ip", "params": {"ip": ip_address}, "rollback": rollback_noop}]
+    }
+
+def quarantine_email(payload: Dict[str, Any]) -> Dict[str, Any]:
+    message_id = "msg-0001"
+    return {
+        "output": {"message_id": message_id, "quarantined": True},
+        "confidence": 90,
+        "side_effects": [{"action": "quarantine_email", "params": {"message_id": message_id}, "rollback": rollback_noop}]
+    }
+
+def trigger_mfa_reset(payload: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = "target_user"
+    return {
+        "output": {"user_id": user_id, "mfa_reset": True},
+        "confidence": 90,
+        "side_effects": [{"action": "trigger_mfa_reset", "params": {"user_id": user_id}, "rollback": rollback_noop}]
     }
 
 def containment_actions(payload: Dict[str, Any]) -> Dict[str, Any]:

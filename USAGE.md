@@ -4,7 +4,7 @@ This guide walks you through a complete end‑to‑end run of APCS, from startin
 
 ## 1. Install the environment
 ```powershell
-cd "C:/Users/user/Documents/projects/Kestrel SGR/Kestrel-SGR-repo"
+cd "C:/Users/user/Documents/projects/Kestrel-SGR"
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
@@ -50,6 +50,18 @@ curl -X POST http://localhost:8080/api/scan \
      -d @samples/credential_harvester.json
 ```
 The response contains the final decision and a URL to the replay JSON.
+
+You can also retrieve forensic traces and generate adversarial payloads:
+```bash
+# List all replay scan IDs
+curl http://localhost:8080/api/replay
+
+# Get full trace for a specific scan
+curl http://localhost:8080/api/replay/<scan_id>
+
+# Generate synthetic red-team payloads
+curl http://localhost:8080/api/red-team
+```
 
 ## 7. Stopping the server
 Press `Ctrl+C` in the terminal running `server.py`.
