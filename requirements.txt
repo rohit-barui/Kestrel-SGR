@@ -1,5 +1,6 @@
 jsonschema>=4.0.0
 # python-whois  # optional, for real WHOIS lookups
+# scikit-learn>=1.0.0  # optional ML dependency
 
 # Dev/CI only:
 # coverage
