@@ -10,6 +10,15 @@
 </head>
 <body>
 <div id="app">
+  <div id="loginOverlay" class="login-overlay" style="display:none;">
+    <div class="login-panel">
+      <h2>APCS Login</h2>
+      <p>Enter your API token to access the dashboard.</p>
+      <input type="password" id="tokenInput" placeholder="Paste your API token" />
+      <button id="loginBtn">Login</button>
+      <p id="loginError" style="color: var(--accent-rose); display:none;">Invalid token</p>
+    </div>
+  </div>
   <header>
     <div class="logo">
       <span class="logo-icon">&#9889;</span>
@@ -106,6 +115,32 @@
         <div id="alertList"></div>
       </div>
     </section>
+
+    <aside class="panel export-panel">
+      <h2>Export</h2>
+      <div class="export-buttons">
+        <button id="exportCsvBtn">Download CSV</button>
+        <button id="exportReportBtn">Summary Report</button>
+      </div>
+      <pre id="exportOutput" style="display:none;"></pre>
+    </aside>
+
+    <aside class="panel webhook-panel">
+      <h2>Webhook Tester</h2>
+      <div class="control-group">
+        <label for="webhookEvent">Event Type</label>
+        <select id="webhookEvent">
+          <option value="phishing_report">Phishing Report</option>
+          <option value="siem_alert">SIEM Alert</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="webhookPayload">Payload</label>
+        <textarea id="webhookPayload" rows="4">{"email": "suspicious email content here", "url": "https://phish.xyz"}</textarea>
+      </div>
+      <button id="sendWebhookBtn">Send Test Webhook</button>
+      <pre id="webhookResult"></pre>
+    </aside>
   </main>
 </div>
 

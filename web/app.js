@@ -1,3 +1,56 @@
+let apiToken = localStorage.getItem("apcs_token") || "";
+
+function setAuthHeader() {
+  return apiToken ? { "Authorization": `Bearer ${apiToken}` } : {};
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = { ...options.headers, ...setAuthHeader() };
+  return fetch(url, { ...options, headers });
+}
+
+async function checkAuth() {
+  if (!apiToken) {
+    const res = await fetch("/api/health");
+    if (res.status === 401) {
+      document.getElementById("loginOverlay").style.display = "flex";
+      return false;
+    }
+    return true;
+  }
+
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...setAuthHeader() },
+    body: JSON.stringify({ token: apiToken }),
+  });
+  if (!res.ok) {
+    localStorage.removeItem("apcs_token");
+    apiToken = "";
+    document.getElementById("loginOverlay").style.display = "flex";
+    return false;
+  }
+  return true;
+}
+
+document.getElementById("loginBtn")?.addEventListener("click", async () => {
+  const token = document.getElementById("tokenInput").value;
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (res.ok) {
+    apiToken = token;
+    localStorage.setItem("apcs_token", token);
+    document.getElementById("loginOverlay").style.display = "none";
+    loadScenarios();
+    loadAnalytics();
+  } else {
+    document.getElementById("loginError").style.display = "block";
+  }
+});
+
 const GRAPH_NODES = [
   { id: "ingest", plane: "perception", label: "Ingest", deps: [] },
   { id: "extract_urls", plane: "perception", label: "Extract URLs", deps: ["ingest"] },
@@ -62,7 +115,7 @@ function log(msg, type = "info") {
 
 async function loadScenarios() {
   try {
-    const res = await fetch("/api/scenarios");
+    const res = await apiFetch("/api/scenarios");
     const data = await res.json();
     state.scenarios = data;
     data.forEach((s) => {
@@ -98,7 +151,7 @@ async function runScan() {
   resetGraph();
   log("Scan started...", "info");
   try {
-    const res = await fetch("/api/scan", {
+    const res = await apiFetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(state.selectedScenario.payload),
@@ -211,7 +264,7 @@ replayBtn.addEventListener("click", async () => {
   if (!state.scanId) return;
   replayBtn.disabled = true;
   try {
-    const res = await fetch(`/api/replay/${state.scanId}`);
+    const res = await apiFetch(`/api/replay/${state.scanId}`);
     const data = await res.json();
     replayEvents = data.events || [];
     replayIndex = -1;
@@ -265,8 +318,8 @@ function activateEdgesForNode(nodeId) {
 async function loadAnalytics() {
   try {
     const [statsRes, trendRes] = await Promise.all([
-      fetch("/api/stats"),
-      fetch("/api/trend"),
+      apiFetch("/api/stats"),
+      apiFetch("/api/trend"),
     ]);
     const stats = await statsRes.json();
     const trend = await trendRes.json();
@@ -415,7 +468,47 @@ function drawGraph() {
   window.__simulation = simulation;
 }
 
-window.addEventListener("load", () => {
+document.getElementById("exportCsvBtn").addEventListener("click", async () => {
+  const res = await apiFetch("/api/export/csv");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "apcs_export.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById("exportReportBtn").addEventListener("click", async () => {
+  const res = await apiFetch("/api/export/report");
+  const text = await res.text();
+  const output = document.getElementById("exportOutput");
+  output.textContent = text;
+  output.style.display = "block";
+});
+
+document.getElementById("sendWebhookBtn")?.addEventListener("click", async () => {
+  const eventType = document.getElementById("webhookEvent").value;
+  let payload;
+  try {
+    payload = JSON.parse(document.getElementById("webhookPayload").value);
+  } catch {
+    document.getElementById("webhookResult").textContent = "Invalid JSON payload";
+    return;
+  }
+  payload.event = eventType;
+  const res = await fetch("/api/webhook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await res.json();
+  document.getElementById("webhookResult").textContent = JSON.stringify(result, null, 2);
+});
+
+window.addEventListener("load", async () => {
+  const authed = await checkAuth();
+  if (!authed) return;
   loadScenarios();
   setupSSE();
   drawGraph();
