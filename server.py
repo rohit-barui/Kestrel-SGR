@@ -1,7 +1,11 @@
-import json, http.server, socketserver, os, sys, threading, time, uuid, io
+import json, http.server, socketserver, os, sys, threading, time, uuid, io, ssl, argparse, logging
 from urllib.parse import urlparse
+from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("apcs")
 
 from core.engine import SkillNode, SkillGraphRuntime
 from core.gateway import Gateway
@@ -12,7 +16,7 @@ from core.red_team import generate_all as generate_red_team_payloads
 from skills.perception import (
     ingest_payload, extract_urls, scan_qr_codes,
     extract_archive_password, whois_lookup, enrich_dns,
-    detect_typo_squatting, extract_entities
+    detect_typo_squatting, extract_entities, enrich_external
 )
 from skills.decision import (
     aggregate_risk, apply_veto, recommend_actions, validate_spf_dkim
@@ -21,6 +25,8 @@ from skills.dominance import (
     deploy_honey_credentials, rewrite_links, containment_actions,
     block_ip, quarantine_email, trigger_mfa_reset
 )
+
+os.makedirs("data", exist_ok=True)
 
 PORT = 8080
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
@@ -78,6 +84,7 @@ def build_graph(gateway, on_node_done=None):
         SkillNode(name="enrich_dns", func=_wrap(enrich_dns, "enrich_dns", on_node_done), deps=["extract_urls"]),
         SkillNode(name="detect_typo_squatting", func=_wrap(detect_typo_squatting, "detect_typo_squatting", on_node_done), deps=["extract_urls"]),
         SkillNode(name="extract_entities", func=_wrap(extract_entities, "extract_entities", on_node_done), deps=["ingest"]),
+        SkillNode(name="enrich_external", func=_wrap(enrich_external, "enrich_external", on_node_done), deps=["extract_urls"]),
         SkillNode(name="validate_spf_dkim", func=_wrap(validate_spf_dkim, "validate_spf_dkim", on_node_done), deps=["ingest"]),
         SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting"]),
         SkillNode(name="apply_veto", func=_wrap(apply_veto, "apply_veto", on_node_done), deps=["aggregate_risk"]),
@@ -117,8 +124,27 @@ class SSEQueue:
             self.event.clear()
         return msg
 
+class RateLimiter:
+    def __init__(self, max_requests=20, window=60):
+        self.max_requests = max_requests
+        self.window = window
+        self.clients = defaultdict(list)
+
+    def is_allowed(self, client_ip):
+        now = time.time()
+        cutoff = now - self.window
+        self.clients[client_ip] = [t for t in self.clients[client_ip] if t > cutoff]
+        if len(self.clients[client_ip]) >= self.max_requests:
+            return False
+        self.clients[client_ip].append(now)
+        return True
+
+rate_limiter = RateLimiter()
+
 class APIHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
+        if not self._check_rate_limit():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
 
@@ -158,6 +184,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             self._serve_static(os.path.join(WEB_DIR, "index.html"))
 
     def do_POST(self):
+        if not self._check_rate_limit():
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/scan":
             length = int(self.headers.get("Content-Length", 0))
@@ -167,6 +195,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"error": "Not found"}, 404)
 
     def do_PUT(self):
+        if not self._check_rate_limit():
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/policies":
             length = int(self.headers.get("Content-Length", 0))
@@ -205,7 +235,32 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 if q in sse_clients:
                     sse_clients.remove(q)
 
+    def _check_rate_limit(self):
+        client_ip = self.client_address[0]
+        if not rate_limiter.is_allowed(client_ip):
+            self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
+            return False
+        return True
+
+    def _validate_scan_body(self, body):
+        if not isinstance(body, dict):
+            return False, "Body must be a JSON object"
+        if not any(k in body for k in ("email", "sms", "voice")):
+            return False, "Body must contain 'email', 'sms', or 'voice' field"
+        for key in ("email", "sms", "voice"):
+            val = body.get(key)
+            if val is not None:
+                if not isinstance(val, str):
+                    return False, f"'{key}' must be a string"
+                if len(val) > 10000:
+                    return False, f"'{key}' exceeds 10000 character limit"
+        return True, ""
+
     def _run_scan(self, body):
+        valid, err = self._validate_scan_body(body)
+        if not valid:
+            self._send_json({"error": err}, 400)
+            return
         scan_id = uuid.uuid4().hex[:8]
         broadcast("scan_start", {"scan_id": scan_id})
         gateway = Gateway()
@@ -280,7 +335,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": "Not found"}, 404)
 
     def log_message(self, format, *args):
-        pass
+        logger.info("%s - %s", self.client_address[0], format % args)
 
 policy_engine = SimpleRegoEngine(POLICY_FILE)
 replay_store = ReplayStore()
@@ -291,8 +346,31 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
 
 if __name__ == "__main__":
-    server = ThreadedHTTPServer(("0.0.0.0", PORT), APIHandler)
-    print(f"Serving HTTP on localhost port {PORT} ...")
+    parser = argparse.ArgumentParser(description="APCS Server")
+    parser.add_argument("--port", type=int, default=PORT, help="Port to bind")
+    parser.add_argument("--cert", help="Path to SSL certificate file")
+    parser.add_argument("--key", help="Path to SSL key file")
+    parser.add_argument("--bind", default="0.0.0.0", help="Bind address")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    server = ThreadedHTTPServer((args.bind, args.port), APIHandler)
+
+    if args.cert and args.key:
+        server.socket = ssl.wrap_socket(
+            server.socket,
+            certfile=args.cert,
+            keyfile=args.key,
+            server_side=True
+        )
+        proto = "HTTPS"
+    else:
+        proto = "HTTP"
+
+    logger.info(f"Serving {proto} on {args.bind} port {args.port} ...")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

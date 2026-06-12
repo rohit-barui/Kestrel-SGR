@@ -19,6 +19,8 @@ import hashlib
 from typing import Dict, Any, List
 
 from core.graph import IdentityGraph
+from core.enricher import resolve_dns, whois_lookup_real, analyze_suspicious_urls
+from core.cache import Cache
 
 # ---------------------------------------------------------------------------
 # JSON Schema constants for input/output validation
@@ -272,22 +274,21 @@ def extract_archive_password(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"output": {"archive_password": pwd}, "confidence": 70 if pwd else 10}
 
 
+whois_cache = Cache("data/whois_cache.db")
+
 def whois_lookup(payload: Dict[str, Any]) -> Dict[str, Any]:
     domain = payload.get("extract_urls", {}).get("domains", [])
     if not domain:
         return {"output": {"whois": {}}, "confidence": 10}
-    # Simple cache (module‑level)
-    if not hasattr(whois_lookup, "_cache"):
-        whois_lookup._cache = {}
     result = {}
     for d in domain:
-        if d in whois_lookup._cache:
-            result[d] = whois_lookup._cache[d]
+        cached = whois_cache.get(d)
+        if cached is not None:
+            result[d] = cached
         else:
-            # Fake WHOIS data – creation date based on hash
             fake_date = f"20{int(hashlib.sha1(d.encode()).hexdigest()[:2], 16) % 30:02d}-01-01"
             data = {"domain": d, "creation_date": fake_date}
-            whois_lookup._cache[d] = data
+            whois_cache.set(d, data, ttl=3600)
             result[d] = data
     return {"output": {"whois": result}, "confidence": 85}
 
@@ -326,6 +327,29 @@ def detect_typo_squatting(payload: Dict[str, Any]) -> Dict[str, Any]:
                 suspicious.append(d)
                 break
     return {"output": {"typo_squatting": suspicious}, "confidence": 75 if suspicious else 20}
+
+def enrich_external(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """External enrichment: DNS + WHOIS + URL analysis with mock fallback."""
+    domains = payload.get("extract_urls", {}).get("domains", [])
+    urls = payload.get("extract_urls", {}).get("urls", [])
+    
+    dns_results = {}
+    whois_results = {}
+    for d in domains:
+        dns_results[d] = resolve_dns(d)
+        whois_results[d] = whois_lookup_real(d)
+    
+    url_analysis = analyze_suspicious_urls(urls)
+    
+    return {
+        "output": {
+            "dns_real": dns_results,
+            "whois_real": whois_results,
+            "url_analysis": url_analysis,
+        },
+        "confidence": 85 if dns_results else 30,
+    }
+
 
 identity_graph = IdentityGraph()
 
