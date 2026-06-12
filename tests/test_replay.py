@@ -1,9 +1,16 @@
 import unittest
+import os
+import tempfile
 from core.replay import ReplayStore
 
 class TestReplayStore(unittest.TestCase):
     def setUp(self):
-        self.store = ReplayStore()
+        self.tmp = tempfile.mktemp(suffix=".db")
+        self.store = ReplayStore(self.tmp)
+
+    def tearDown(self):
+        self.store.conn.close()
+        os.unlink(self.tmp)
 
     def test_store_and_retrieve(self):
         self.store.store("scan1", {"email": "test"}, {"extract_urls": {"urls": []}}, "ALLOW", 0, 50, ["allow"])
