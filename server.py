@@ -11,7 +11,11 @@ from core.engine import SkillNode, SkillGraphRuntime
 from core.gateway import Gateway
 from core.policy import SimpleRegoEngine
 from core.replay import ReplayStore
+from core.export import export_csv, generate_summary_report
+from core.notifications import notifier
 from core.drift import DriftTracker
+from core.auth import auth_manager
+from core.webhooks import webhook_handler
 from core.logging import setup_logging
 from core.red_team import generate_all as generate_red_team_payloads
 from skills.perception import (
@@ -146,10 +150,16 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if not self._check_rate_limit():
             return
+        if not self._check_auth():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         logger = logging.getLogger("apcs")
         logger.info("GET %s from %s", path, self.client_address[0])
+
+        if path == "/api/auth/tokens":
+            self._send_json(auth_manager.list_tokens())
+            return
 
         if path == "/api/scenarios":
             self._send_json([{"id": k, "name": v["name"], "payload": v["payload"]} for k, v in SCENARIOS.items()])
@@ -185,6 +195,41 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/red-team":
             self._send_json(generate_red_team_payloads())
             return
+        if path == "/api/notifications/config":
+            config_path = os.environ.get("APCS_NOTIFY_CONFIG", "notify_config.json")
+            if os.path.exists(config_path):
+                with open(config_path) as f:
+                    self._send_json(json.load(f))
+            else:
+                self._send_json({})
+            return
+        if path == "/api/export/csv":
+            all_ids = replay_store.list_ids()
+            traces = []
+            for sid in all_ids:
+                t = replay_store.get(sid)
+                if t:
+                    traces.append(t)
+            csv_data = export_csv(traces)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Disposition", "attachment; filename=apcs_export.csv")
+            self.send_header("Content-Length", str(len(csv_data.encode())))
+            self.end_headers()
+            self.wfile.write(csv_data.encode())
+            return
+
+        if path == "/api/export/report":
+            stats = replay_store.stats()
+            trend = replay_store.risk_trend()
+            report = generate_summary_report(stats, trend)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(report.encode())))
+            self.end_headers()
+            self.wfile.write(report.encode())
+            return
+
         if path == "/api/health":
             self._send_json({
                 "status": "ok",
@@ -218,19 +263,61 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if not self._check_rate_limit():
             return
+        if not self._check_auth():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         logger = logging.getLogger("apcs")
         logger.info("POST %s from %s", path, self.client_address[0])
+        if parsed.path == "/api/auth/login":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            token = body.get("token", "")
+            info = auth_manager.validate_token(token)
+            if info:
+                self._send_json({"valid": True, "label": info["label"]})
+            else:
+                self._send_json({"valid": False, "error": "Invalid token"}, 401)
+            return
+        if parsed.path == "/api/auth/token/generate":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            label = body.get("label", "api-key")
+            new_token = auth_manager.generate_token(label)
+            self._send_json({"token": new_token, "label": label})
+            return
         if path == "/api/scan":
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             self._run_scan(body)
             return
+        if parsed.path == "/api/webhook":
+            length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(length)
+
+            signature = self.headers.get("X-APCS-Signature", "")
+            if not webhook_handler.verify_signature(body_bytes, signature):
+                self._send_json({"error": "Invalid signature"}, 401)
+                return
+
+            body = json.loads(body_bytes) if body_bytes else {}
+            event_type = body.get("event", body.get("type", "phishing_report"))
+            result = webhook_handler.process(event_type, body)
+
+            if result.get("status") == "accepted":
+                scan_payload = result.get("scan_payload", {})
+                if scan_payload:
+                    self._run_scan(scan_payload)
+                    return
+
+            self._send_json(result)
+            return
         self._send_json({"error": "Not found"}, 404)
 
     def do_PUT(self):
         if not self._check_rate_limit():
+            return
+        if not self._check_auth():
             return
         parsed = urlparse(self.path)
         path = parsed.path
@@ -244,6 +331,16 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 f.write(content)
             global policy_engine
             policy_engine = SimpleRegoEngine(POLICY_FILE)
+            self._send_json({"status": "updated"})
+            return
+        if parsed.path == "/api/notifications/config":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            config_path = os.environ.get("APCS_NOTIFY_CONFIG", "notify_config.json")
+            with open(config_path, "w") as f:
+                json.dump(body, f)
+            from core.notifications import notifier
+            notifier.config = body
             self._send_json({"status": "updated"})
             return
         self._send_json({"error": "Not found"}, 404)
@@ -272,6 +369,25 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             with sse_lock:
                 if q in sse_clients:
                     sse_clients.remove(q)
+
+    def _check_auth(self) -> bool:
+        # Skip auth for static files, login endpoint, and health/metrics
+        path = urlparse(self.path).path
+        if path in ("/api/health", "/api/metrics", "/api/auth/login", "/") or path.startswith("/api/auth/"):
+            return True
+
+        # Allow if no tokens configured (dev mode)
+        if not auth_manager.has_tokens():
+            return True
+
+        auth_header = self.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            if auth_manager.validate_token(token):
+                return True
+
+        self._send_json({"error": "Unauthorized. Provide Authorization: Bearer <token> header."}, 401)
+        return False
 
     def _check_rate_limit(self):
         client_ip = self.client_address[0]
@@ -330,6 +446,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 pass
             decision = "ALLOW" if is_allowed else "DENY"
             replay_store.store(scan_id, body, final_output, decision, risk_score, confidence, actions)
+            notifier.alert(scan_id, risk_score, decision, actions, dominance)
 
             # Drift tracking – feedback loop
             if decision == "ALLOW" and risk_score > 70:
