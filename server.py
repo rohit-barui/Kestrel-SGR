@@ -18,6 +18,7 @@ from core.auth import auth_manager
 from core.webhooks import webhook_handler
 from core.logging import setup_logging
 from core.ml import ml_score
+from config.constants import EXAMPLE_URLS
 from core.red_team import generate_all as generate_red_team_payloads
 from skills.perception import (
     ingest_payload, extract_urls, scan_qr_codes,
@@ -48,13 +49,13 @@ SCENARIOS = {
     "credential_harvester": {
         "name": "Credential Harvester (Lookalike Domain)",
         "payload": {
-            "email": "From: support@secure-login.xyz\nSubject: Verify account\n\nClick here: https://secure-login.xyz/verify [QR:https://phish.xyz/qr]\npassword: verify2024"
+            "email": f'From: support@secure-login.xyz\nSubject: Verify account\n\nClick here: {EXAMPLE_URLS["secure_login"]}/verify [QR:{EXAMPLE_URLS["phish_qr"]}]\npassword: verify2024'
         }
     },
     "malware_drop": {
         "name": "Malware Drop (Invoice Attachment)",
         "payload": {
-            "email": "From: billing@mycompay.co\nSubject: Overdue invoice\n\nInvoice attached. password: inv123\nDownload: https://mycompay.co/invoice.exe"
+            "email": f'From: billing@mycompay.co\nSubject: Overdue invoice\n\nInvoice attached. password: inv123\nDownload: {EXAMPLE_URLS["invoice"]}'
         }
     },
     "clean_alert": {
