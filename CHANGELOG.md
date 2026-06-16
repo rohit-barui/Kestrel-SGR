@@ -5,6 +5,12 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 ## [Unreleased]
 
 ### Added
+- **RBAC in AuthManager** (`core/auth.py`) – token now stores a `role` field (default `Analyst`). New methods: `has_role(token, role)`.
+- **HMAC verification middleware** (`server.py`) – optional `X-HMAC` header verification using a secret fetched from the vault (`webhook_hmac_secret`).
+- **Role-based endpoint protection** – `/api/auth/token/generate` (POST) and `/api/policies` (PUT) require `Admin` role.
+- **mTLS support** – `--client-ca` argument for client certificate verification; upgraded to `ssl.create_default_context`.
+- **Body caching** – `_read_body()` helper prevents double-read conflicts when HMAC and handlers both need the request body.
+- **Auth role tests** – 5 new tests covering `generate_token` with role, `has_role` validation, and default role fallback.
 - **Encrypted database layer** (`core/db.py`) – centralized `get_encrypted_conn()` helper with SQLCipher pragma support, sourced from the vault.
 - **Vault client** (`core/vault.py`) – strategy-pattern secrets manager with JSON file backend (default for CI), env-var configurable for future Azure/HashiCorp/AWS providers.
 - **Email parser tests** (`tests/test_email_parser.py`) – 100% line coverage for `core/email_parser.py`.

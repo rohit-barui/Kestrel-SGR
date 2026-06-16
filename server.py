@@ -1,4 +1,4 @@
-import json, http.server, socketserver, os, sys, threading, time, uuid, io, ssl, argparse, logging
+import json, http.server, socketserver, os, sys, threading, time, uuid, io, ssl, argparse, logging, hmac, hashlib
 from urllib.parse import urlparse
 from collections import defaultdict
 
@@ -150,6 +150,11 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 class APIHandler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        self._auth_token = None
+        self._auth_info = None
+        super().__init__(*args, **kwargs)
+
     def do_GET(self):
         if not self._check_rate_limit():
             return
@@ -268,13 +273,15 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             return
         if not self._check_auth():
             return
+        if not self._verify_hmac():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         logger = logging.getLogger("apcs")
         logger.info("POST %s from %s", path, self.client_address[0])
         if parsed.path == "/api/auth/login":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length)) if length else {}
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
             token = body.get("token", "")
             info = auth_manager.validate_token(token)
             if info:
@@ -283,20 +290,21 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"valid": False, "error": "Invalid token"}, 401)
             return
         if parsed.path == "/api/auth/token/generate":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length)) if length else {}
+            if not self._check_role("Admin"):
+                return
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
             label = body.get("label", "api-key")
             new_token = auth_manager.generate_token(label)
             self._send_json({"token": new_token, "label": label})
             return
         if path == "/api/scan":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length)) if length else {}
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
             self._run_scan(body)
             return
         if parsed.path == "/api/webhook":
-            length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(length)
+            body_bytes = self._read_body()
 
             signature = self.headers.get("X-APCS-Signature", "")
             if not webhook_handler.verify_signature(body_bytes, signature):
@@ -322,13 +330,17 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             return
         if not self._check_auth():
             return
+        if not self._verify_hmac():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         logger = logging.getLogger("apcs")
         logger.info("PUT %s from %s", path, self.client_address[0])
         if path == "/api/policies":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length)) if length else {}
+            if not self._check_role("Admin"):
+                return
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
             content = body.get("policy", "")
             with open(POLICY_FILE, "w") as f:
                 f.write(content)
@@ -337,9 +349,10 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"status": "updated"})
             return
         if parsed.path == "/api/notifications/config":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length)) if length else {}
-            config_path = os.environ.get("APCS_NOTIFY_CONFIG", "notify_config.json")
+            if not self._check_role("Admin"):
+                return
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
             with open(config_path, "w") as f:
                 json.dump(body, f)
             from core.notifications import notifier
@@ -386,11 +399,59 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if auth_manager.validate_token(token):
+            info = auth_manager.validate_token(token)
+            if info:
+                self._auth_token = token
+                self._auth_info = info
                 return True
 
         self._send_json({"error": "Unauthorized. Provide Authorization: Bearer <token> header."}, 401)
         return False
+
+    def _check_role(self, required_role: str) -> bool:
+        """Check if the authenticated token has the required role."""
+        token = getattr(self, '_auth_token', None)
+        if token is None:
+            return False
+        if auth_manager.has_role(token, required_role):
+            return True
+        self._send_json({"error": f"Forbidden: requires '{required_role}' role"}, 403)
+        return False
+
+    def _read_body(self):
+        """Read and cache the request body so it can be read only once."""
+        if hasattr(self, '_cached_body'):
+            return self._cached_body
+        length = int(self.headers.get("Content-Length", 0))
+        if length:
+            self._cached_body = self.rfile.read(length)
+        else:
+            self._cached_body = b""
+        return self._cached_body
+
+    def _verify_hmac(self) -> bool:
+        """Verify HMAC signature using a secret from the vault."""
+        body_bytes = self._read_body()
+
+        signature = self.headers.get("X-HMAC", "")
+        if not signature:
+            # HMAC is optional; if not present, skip verification
+            return True
+
+        try:
+            from core.vault import get_secret
+            secret = get_secret("webhook_hmac_secret")
+        except Exception:
+            secret = ""
+
+        if not secret:
+            return True
+
+        expected = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, signature):
+            self._send_json({"error": "Invalid HMAC signature"}, 401)
+            return False
+        return True
 
     def _check_rate_limit(self):
         client_ip = self.client_address[0]
@@ -514,6 +575,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=PORT, help="Port to bind")
     parser.add_argument("--cert", help="Path to SSL certificate file")
     parser.add_argument("--key", help="Path to SSL key file")
+    parser.add_argument("--client-ca", help="Path to CA certificate for mTLS client verification")
     parser.add_argument("--bind", default="0.0.0.0", help="Bind address")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument("--json-logs", action="store_true", help="Output logs in JSON format")
@@ -523,11 +585,16 @@ if __name__ == "__main__":
 
     server = ThreadedHTTPServer((args.bind, args.port), APIHandler)
 
+    ssl_ctx = None
     if args.cert and args.key:
-        server.socket = ssl.wrap_socket(
+        ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_ctx.load_cert_chain(certfile=args.cert, keyfile=args.key)
+        # Optionally require client certificate
+        if hasattr(args, 'client_ca') and args.client_ca:
+            ssl_ctx.load_verify_locations(cafile=args.client_ca)
+            ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        server.socket = ssl_ctx.wrap_socket(
             server.socket,
-            certfile=args.cert,
-            keyfile=args.key,
             server_side=True
         )
         proto = "HTTPS"
