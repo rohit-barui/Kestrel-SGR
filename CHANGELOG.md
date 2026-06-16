@@ -1,28 +1,24 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-## [0.4.0] - 2026-06-12
-- Fixed engine topological sort (breadth-first)
-- Added schema validation with jsonschema
-- Added INPUT_SCHEMA/OUTPUT_SCHEMA for all skills
-- Implemented weighted confidence aggregation
-- Rewrote Rego parser with AST-based evaluation
-- Added standalone block_ip, quarantine_email, trigger_mfa_reset
-- Added validate_spf_dkim decision function
-- Wired reasoning, drift, graph modules into runtime
-- Added real-time SSE node coloring in dashboard
-- Added forensic replay UI to dashboard
-- Replaced vanilla SVG with D3.js interactive graph
-- Created GitHub Actions CI pipeline
-- Added server integration tests
-- Created API.md documentation
+All notable changes to Kestrel-SGR (APCS) are documented here.
 
 ## [Unreleased]
-- Added comprehensive documentation suite (ARCHITECTURE, REPOSITORY_STRUCTURE, CORE, SKILLS, POLICIES, WEB_UI, USAGE, TESTING, CONTRIBUTING, CHANGELOG).
-- Introduced `requirements.txt` with `jsonschema` dependency.
-- Created `feature/docs` branch for documentation work.
 
-## [0.1.0] - 2026-06-12
-- Initial repository scaffold with placeholder `LICENSE` and `README.md`.
-- No functional code yet.
+### Added
+- **Encrypted database layer** (`core/db.py`) – centralized `get_encrypted_conn()` helper with SQLCipher pragma support, sourced from the vault.
+- **Vault client** (`core/vault.py`) – strategy-pattern secrets manager with JSON file backend (default for CI), env-var configurable for future Azure/HashiCorp/AWS providers.
+- **Email parser tests** (`tests/test_email_parser.py`) – 100% line coverage for `core/email_parser.py`.
+- **Database tests** (`tests/test_db.py`) – verify encryption key retrieval and error handling.
+- **Vault tests** (`tests/test_vault.py`) – verify JSON backend reads, missing key exception, and invalid secret name rejection.
+
+### Changed
+- `core/cache.py` – upgraded to use `get_encrypted_conn()` instead of raw `sqlite3.connect`.
+- `core/replay.py` – upgraded to use `get_encrypted_conn()` instead of raw `sqlite3.connect`.
+- `tests/test_auth.py` – improved truncation test for `AuthManager.list_tokens()`.
+- `.gitignore` – added `.coverage` and `htmlcov/` entries.
+
+### Fixed
+- `core/ml.py` – resolved merge conflict (removed duplicate `import json` and redundant synthetic dataset definitions).
+
+### Infrastructure
+- Hard-coded workflow: CI pipeline, `start-task.ps1`, `ci/check_coverage.py`, PR template, and `CONTRIBUTING.md` established.

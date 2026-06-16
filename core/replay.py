@@ -1,6 +1,6 @@
 import json
 import time
-import sqlite3
+from .db import get_encrypted_conn
 import os
 import threading
 from typing import Dict, Any, List, Optional
@@ -10,7 +10,7 @@ class ReplayStore:
     def __init__(self, db_path="data/replay.db"):
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.lock = threading.Lock()
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn = get_encrypted_conn(db_path)
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS replay_traces ("
             "scan_id TEXT PRIMARY KEY, data TEXT, created_at REAL)"
