@@ -27,14 +27,20 @@ class AuthManager:
         with open(self.token_file, "w") as f:
             json.dump(self._tokens, f, indent=2)
 
-    def generate_token(self, label: str = "default") -> str:
+    def generate_token(self, label: str = "default", role: str = "Analyst") -> str:
         token = secrets.token_hex(32)
-        self._tokens[token] = {"label": label, "created_at": time.time()}
+        self._tokens[token] = {"label": label, "created_at": time.time(), "role": role}
         self._save()
         return token
 
     def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
         return self._tokens.get(token)
+
+    def has_role(self, token: str, role: str) -> bool:
+        info = self._tokens.get(token)
+        if info is None:
+            return False
+        return info.get("role", "") == role
 
     def revoke_token(self, token: str) -> bool:
         if token in self._tokens:

@@ -62,3 +62,36 @@ def test_default_auto_generation(monkeypatch, tmp_path, capsys):
     with open(token_path) as f:
         data = json.load(f)
     assert len(data) == 1
+
+
+def test_generate_token_with_role(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    token = mgr.generate_token("admin-key", role="Admin")
+    info = mgr.validate_token(token)
+    assert info is not None
+    assert info["role"] == "Admin"
+
+def test_default_role_is_analyst(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    token = mgr.generate_token("default-key")
+    info = mgr.validate_token(token)
+    assert info["role"] == "Analyst"
+
+def test_has_role_returns_true(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    token = mgr.generate_token("admin-key", role="Admin")
+    assert mgr.has_role(token, "Admin") is True
+
+def test_has_role_returns_false_for_wrong_role(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    token = mgr.generate_token("reader-key", role="Analyst")
+    assert mgr.has_role(token, "Admin") is False
+
+def test_has_role_returns_false_for_invalid_token(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    assert mgr.has_role("invalid-token", "Analyst") is False
