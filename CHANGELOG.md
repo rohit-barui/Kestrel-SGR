@@ -5,6 +5,8 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 ## [Unreleased]
 
 ### Added
+- **Celery integration** (`core/celery_app.py`, `core/tasks.py`) – Celery app with in-memory broker/backend; `run_skill` task wrapper that resolves skill functions from a global registry.
+- **Skill registry** (`core/engine.py`) – `_SKILL_REGISTRY` and `register_skill()` method so Celery workers can resolve skill functions by name.
 - **RBAC in AuthManager** (`core/auth.py`) – token now stores a `role` field (default `Analyst`). New methods: `has_role(token, role)`.
 - **HMAC verification middleware** (`server.py`) – optional `X-HMAC` header verification using a secret fetched from the vault (`webhook_hmac_secret`).
 - **Role-based endpoint protection** – `/api/auth/token/generate` (POST) and `/api/policies` (PUT) require `Admin` role.
@@ -18,6 +20,7 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 - **Vault tests** (`tests/test_vault.py`) – verify JSON backend reads, missing key exception, and invalid secret name rejection.
 
 ### Changed
+- `core/engine.py` – migrated from `ThreadPoolExecutor` to Celery task execution with `_SKILL_REGISTRY`; fixed `heuristic_boost` confidence doubling bug (risk_score set to 0).
 - `core/cache.py` – upgraded to use `get_encrypted_conn()` instead of raw `sqlite3.connect`.
 - `core/replay.py` – upgraded to use `get_encrypted_conn()` instead of raw `sqlite3.connect`.
 - `tests/test_auth.py` – improved truncation test for `AuthManager.list_tokens()`.

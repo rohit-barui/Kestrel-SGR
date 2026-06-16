@@ -1,7 +1,11 @@
 jsonschema>=4.0.0
+celery>=5.3.0
+redis>=5.0.0
 # python-whois  # optional, for real WHOIS lookups
 # scikit-learn>=1.0.0  # optional ML dependency
 
 # Dev/CI only:
+pytest
+pytest-cov
 # coverage
 # ruff
