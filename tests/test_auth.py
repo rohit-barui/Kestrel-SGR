@@ -1,31 +1,64 @@
-import unittest, tempfile, os, json
-from core.auth import AuthManager
+import os
+import json
+import builtins
+import io
+import pytest
+from core.auth import AuthManager, TOKEN_FILE
 
-class TestAuth(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".json")
-        self.auth = AuthManager(self.tmp)
+@pytest.fixture(autouse=True)
+def isolated_env(tmp_path, monkeypatch):
+    # Use a temporary token file for each test
+    token_path = tmp_path / "tokens.json"
+    monkeypatch.setenv("APCS_TOKEN_FILE", str(token_path))
+    # Ensure module reload uses the env var
+    import importlib
+    import core.auth as auth_mod
+    importlib.reload(auth_mod)
+    yield
+    # Cleanup
+    if token_path.exists():
+        token_path.unlink()
 
-    def tearDown(self):
-        if os.path.exists(self.tmp):
-            os.unlink(self.tmp)
+def test_generate_and_validate_token(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    token = mgr.generate_token("unit-test")
+    assert isinstance(token, str) and len(token) == 64
+    # Validation returns stored dict with label
+    info = mgr.validate_token(token)
+    assert info is not None and info["label"] == "unit-test"
 
-    def test_generate_and_validate(self):
-        token = self.auth.generate_token("test-key")
-        info = self.auth.validate_token(token)
-        self.assertIsNotNone(info)
-        self.assertEqual(info["label"], "test-key")
+def test_revoke_token(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    token = mgr.generate_token()
+    assert mgr.revoke_token(token) is True
+    # After revocation, token should be missing
+    assert mgr.validate_token(token) is None
+    # Revoking again returns False
+    assert mgr.revoke_token(token) is False
 
-    def test_revoke(self):
-        token = self.auth.generate_token("test")
-        self.assertTrue(self.auth.revoke_token(token))
-        self.assertIsNone(self.auth.validate_token(token))
+def test_list_tokens_truncation(isolated_env):
+    from core.auth import AuthManager
+    mgr = AuthManager()
+    long_token = mgr.generate_token(label="test")
+    # Find the dict entry whose label matches our generated token
+    matching_key = next(k for k, v in mgr.list_tokens().items() if v.get("label") == "test")
+    expected_prefix = long_token[:8]
+    assert matching_key.startswith(expected_prefix)
+    assert matching_key.endswith('...')
 
-    def test_list_tokens(self):
-        self.auth.generate_token("a")
-        self.auth.generate_token("b")
-        tokens = self.auth.list_tokens()
-        self.assertEqual(len(tokens), 2)
-
-    def test_invalid_token(self):
-        self.assertIsNone(self.auth.validate_token("invalid_token_here"))
+def test_default_auto_generation(monkeypatch, tmp_path, capsys):
+    # Ensure no token file exists initially
+    token_path = tmp_path / "default_tokens.json"
+    monkeypatch.setenv("APCS_TOKEN_FILE", str(token_path))
+    # Reload module to trigger auto‑generation block
+    import importlib, core.auth as auth_mod
+    importlib.reload(auth_mod)
+    captured = capsys.readouterr()
+    # Should have printed a generated token line
+    assert "[auth] Default API token generated" in captured.out
+    # Token file should now exist and contain one token
+    with open(token_path) as f:
+        data = json.load(f)
+    assert len(data) == 1

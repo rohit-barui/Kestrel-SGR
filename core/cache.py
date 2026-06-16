@@ -1,4 +1,4 @@
-import sqlite3
+from .db import get_encrypted_conn
 import time
 import os
 import json
@@ -9,7 +9,7 @@ class Cache:
     def __init__(self, db_path="data/cache.db"):
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.lock = threading.Lock()
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn = get_encrypted_conn(db_path)
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS cache ("
             "key TEXT PRIMARY KEY, value TEXT, expires_at REAL)"
