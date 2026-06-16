@@ -17,6 +17,8 @@ from core.drift import DriftTracker
 from core.auth import auth_manager
 from core.webhooks import webhook_handler
 from core.logging import setup_logging
+from core.ml import ml_score
+from config.constants import EXAMPLE_URLS
 from core.red_team import generate_all as generate_red_team_payloads
 from skills.perception import (
     ingest_payload, extract_urls, scan_qr_codes,
@@ -47,13 +49,13 @@ SCENARIOS = {
     "credential_harvester": {
         "name": "Credential Harvester (Lookalike Domain)",
         "payload": {
-            "email": "From: support@secure-login.xyz\nSubject: Verify account\n\nClick here: https://secure-login.xyz/verify [QR:https://phish.xyz/qr]\npassword: verify2024"
+            "email": f'From: support@secure-login.xyz\nSubject: Verify account\n\nClick here: {EXAMPLE_URLS["secure_login"]}/verify [QR:{EXAMPLE_URLS["phish_qr"]}]\npassword: verify2024'
         }
     },
     "malware_drop": {
         "name": "Malware Drop (Invoice Attachment)",
         "payload": {
-            "email": "From: billing@mycompay.co\nSubject: Overdue invoice\n\nInvoice attached. password: inv123\nDownload: https://mycompay.co/invoice.exe"
+            "email": f'From: billing@mycompay.co\nSubject: Overdue invoice\n\nInvoice attached. password: inv123\nDownload: {EXAMPLE_URLS["invoice"]}'
         }
     },
     "clean_alert": {
@@ -91,6 +93,7 @@ def build_graph(gateway, on_node_done=None):
         SkillNode(name="extract_entities", func=_wrap(extract_entities, "extract_entities", on_node_done), deps=["ingest"]),
         SkillNode(name="enrich_external", func=_wrap(enrich_external, "enrich_external", on_node_done), deps=["extract_urls"]),
         SkillNode(name="validate_spf_dkim", func=_wrap(validate_spf_dkim, "validate_spf_dkim", on_node_done), deps=["ingest"]),
+        SkillNode(name="ml_score", func=_wrap(ml_score, "ml_score", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "extract_entities", "enrich_external", "validate_spf_dkim"]),
         SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting"]),
         SkillNode(name="apply_veto", func=_wrap(apply_veto, "apply_veto", on_node_done), deps=["aggregate_risk"]),
         SkillNode(name="recommend_actions", func=_wrap(recommend_actions, "recommend_actions", on_node_done), deps=["apply_veto"]),
@@ -463,7 +466,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             broadcast("drift_status", {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status})
 
             broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
-            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
+            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None)})
         except Exception as e:
             broadcast("run_error", {"scan_id": scan_id, "error": str(e)})
             self._send_json({"scan_id": scan_id, "error": str(e)}, 500)

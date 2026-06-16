@@ -24,8 +24,10 @@ SKILL_WEIGHTS = {
     "ingest": 0.05, "extract_urls": 0.10, "scan_qr_codes": 0.10,
     "extract_archive_password": 0.05, "whois_lookup": 0.10,
     "enrich_dns": 0.05, "detect_typo_squatting": 0.15,
+    "ml_score": 0.15,
     "aggregate_risk": 0.15, "apply_veto": 0.15, "recommend_actions": 0.10,
 }
+
 
 class SkillNode:
     def __init__(self, name: str, func: SkillFunction, deps: List[str] = None,
