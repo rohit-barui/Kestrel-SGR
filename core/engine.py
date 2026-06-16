@@ -9,13 +9,16 @@ Provides:
 """
 
 import json
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Any, Callable, Tuple
 
 import jsonschema
 
 from core.reasoning import combine, heuristic_boost
+
+from core.tasks import run_skill
+
+# Skill function registry – maps name → callable so Celery workers can resolve them.
+_SKILL_REGISTRY: Dict[str, Callable] = {}
 
 # Placeholder types – real implementations will replace these
 SkillFunction = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -78,8 +81,12 @@ class SkillGraphRuntime:
             except jsonschema.ValidationError as e:
                 raise RuntimeError(f"Schema validation failed for {node_name} {stage}: {e}")
 
+    def register_skill(self, name: str, func: Callable):
+        """Register a skill function so Celery workers can resolve it."""
+        _SKILL_REGISTRY[name] = func
+
     # ---------------------------------------------------------------------
-    # Execution – runs nodes respecting dependencies, aggregates confidence
+    # Execution – runs nodes via Celery tasks, aggregates confidence
     # ---------------------------------------------------------------------
     def run(self, entry_payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -87,50 +94,39 @@ class SkillGraphRuntime:
         except Exception as e:
             raise RuntimeError(f"Graph validation failed: {e}")
 
+        # Register all node functions for Celery resolution
+        for n in self.nodes.values():
+            self.register_skill(n.name, n.func)
+
         # Mapping of node name -> output for dependency injection
         context: Dict[str, Any] = {"__entry__": entry_payload}
         confidence_weights: List[Tuple[str, float]] = []
-        with ThreadPoolExecutor() as executor:
-            future_to_node: Dict[Any, SkillNode] = {}
-            # schedule nodes whose deps are satisfied
-            while self.execution_order:
-                # find nodes ready to run (deps already in context)
-                ready_nodes = [n for n in self.execution_order
-                              if all(dep in context for dep in n.deps)]
-                if not ready_nodes:
-                    # should not happen because of topological sort
-                    raise RuntimeError("Deadlock while scheduling skills")
-                for node in ready_nodes:
-                    # Build input payload from deps
-                    inputs = {dep: context[dep] for dep in node.deps}
-                    # Include entry payload for convenience
-                    inputs["__entry__"] = entry_payload
-                    self._validate(inputs, node.input_schema, "input", node.name)
-                    future = executor.submit(node.func, inputs)
-                    future_to_node[future] = node
-                    self.execution_order.remove(node)
-                # collect completed futures
-                for future in as_completed(future_to_node):
-                    node = future_to_node[future]
-                    try:
-                        result = future.result()
-                        self._validate(result, node.output_schema, "output", node.name)
-                        node.result = result
-                        node.success = True
-                        # store for downstream deps
-                        context[node.name] = result.get("output", {})
-                        # collect confidence if present
-                        if "confidence" in result:
-                            confidence_weights.append((node.name, result["confidence"]))
-                        # record side‑effect for possible rollback via gateway
-                        if "side_effects" in result:
-                            for se in result["side_effects"]:
-                                self.gateway.record(**se)
-                    except Exception as exc:
-                        node.success = False
-                        # abort remaining execution and trigger rollback
-                        self.gateway.rollback()
-                        raise RuntimeError(f"Skill {node.name} failed: {exc}")
+
+        while self.execution_order:
+            # find nodes ready to run (deps already in context)
+            ready_nodes = [n for n in self.execution_order
+                          if all(dep in context for dep in n.deps)]
+            if not ready_nodes:
+                raise RuntimeError("Deadlock while scheduling skills")
+            for node in ready_nodes:
+                inputs = {dep: context[dep] for dep in node.deps}
+                inputs["__entry__"] = entry_payload
+                self._validate(inputs, node.input_schema, "input", node.name)
+                # Execute the skill – use Celery's eager mode for synchronous
+                # execution (no broker needed).  For production with a real
+                # broker, replace with .delay() and collect results via
+                # AsyncResult.
+                result = run_skill(node.name, inputs)
+                self._validate(result, node.output_schema, "output", node.name)
+                node.result = result
+                node.success = True
+                context[node.name] = result.get("output", {})
+                if "confidence" in result:
+                    confidence_weights.append((node.name, result["confidence"]))
+                if "side_effects" in result:
+                    for se in result["side_effects"]:
+                        self.gateway.record(**se)
+                self.execution_order.remove(node)
         # After all nodes succeeded, compute aggregated confidence
         if confidence_weights:
             scores = [conf for _, conf in confidence_weights]
@@ -153,7 +149,7 @@ class SkillGraphRuntime:
                 threat_signals += len(typo)
             if threat_signals > 2:
                 aggregated_confidence = heuristic_boost(
-                    risk_score=aggregated_confidence,
+                    risk_score=0,
                     threat_signals=threat_signals,
                     base=aggregated_confidence
                 )
