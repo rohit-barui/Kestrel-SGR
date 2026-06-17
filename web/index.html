@@ -19,6 +19,16 @@
       <p id="loginError" style="color: var(--accent-rose); display:none;">Invalid token</p>
     </div>
   </div>
+  <div id="piiOverlay" class="pii-overlay" style="display:none;">
+    <div class="pii-modal">
+      <h3>&#9888; PII Detected</h3>
+      <p>The input appears to contain personally identifiable information (PII). Proceeding may expose sensitive data.</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="piiCancel">Cancel</button>
+        <button class="btn-proceed" id="piiProceed">Proceed Anyway</button>
+      </div>
+    </div>
+  </div>
   <header>
     <div class="logo">
       <span class="logo-icon">&#9889;</span>
@@ -41,6 +51,11 @@
         <h3>Payload</h3>
         <pre id="payloadPreview">{ }</pre>
       </div>
+      <div class="control-group">
+        <label for="customScanInput">Custom Scan</label>
+        <textarea id="customScanInput" rows="3" placeholder='{"email":"suspicious text..."}'></textarea>
+      </div>
+      <button id="runCustomBtn">Run Custom Scan</button>
     </aside>
 
     <section class="panel graph-panel">

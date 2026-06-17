@@ -143,6 +143,79 @@ selectEl.addEventListener("change", () => {
 
 runBtn.addEventListener("click", runScan);
 
+let pendingCustomScan = null;
+
+document.getElementById("runCustomBtn").addEventListener("click", runCustomScan);
+
+async function runCustomScan() {
+  const textarea = document.getElementById("customScanInput");
+  let body;
+  try {
+    body = JSON.parse(textarea.value);
+  } catch {
+    log("Invalid JSON in custom scan input", "error");
+    return;
+  }
+  if (!body.email && !body.sms && !body.voice) {
+    log("Custom scan payload must contain 'email', 'sms', or 'voice' field", "error");
+    return;
+  }
+  // Check for PII
+  try {
+    const piiRes = await apiFetch("/api/check-pii", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: body.email || body.sms || body.voice }),
+    });
+    const piiData = await piiRes.json();
+    if (piiData.contains_pii) {
+      pendingCustomScan = body;
+      document.getElementById("piiOverlay").style.display = "flex";
+      return;
+    }
+  } catch {
+    // PII check unavailable; proceed anyway
+  }
+  performCustomScan(body);
+}
+
+document.getElementById("piiProceed").addEventListener("click", () => {
+  document.getElementById("piiOverlay").style.display = "none";
+  if (pendingCustomScan) {
+    performCustomScan(pendingCustomScan);
+    pendingCustomScan = null;
+  }
+});
+
+document.getElementById("piiCancel").addEventListener("click", () => {
+  document.getElementById("piiOverlay").style.display = "none";
+  pendingCustomScan = null;
+});
+
+async function performCustomScan(payload) {
+  statusBadge.textContent = "Running";
+  statusBadge.style.background = "var(--accent-cyan)";
+  resetGraph();
+  log("Custom scan started...", "info");
+  try {
+    const res = await apiFetch("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+    if (result.error) {
+      log(`Error: ${result.error}`, "error");
+      statusBadge.textContent = "Error";
+      statusBadge.style.background = "var(--accent-rose)";
+    }
+  } catch (e) {
+    log(`Request failed: ${e.message}`, "error");
+    statusBadge.textContent = "Error";
+    statusBadge.style.background = "var(--accent-rose)";
+  }
+}
+
 async function runScan() {
   if (!state.selectedScenario) return;
   runBtn.disabled = true;

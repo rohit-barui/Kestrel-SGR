@@ -327,6 +327,15 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 
             self._send_json(result)
             return
+        if path == "/api/check-pii":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            text = body.get("text", "")
+            from core.privacy import redact_pii
+            redacted = redact_pii(text)
+            contains_pii = redacted != text
+            self._send_json({"contains_pii": contains_pii, "redacted": redacted})
+            return
         self._send_json({"error": "Not found"}, 404)
 
     def do_PUT(self):
