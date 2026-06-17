@@ -34,6 +34,9 @@ class AuthManager:
         return token
 
     def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
+        # Reload token file if token not in memory (helps when tokens are added after server start)
+        if token not in self._tokens:
+            self._load()
         return self._tokens.get(token)
 
     def has_role(self, token: str, role: str) -> bool:

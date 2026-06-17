@@ -172,13 +172,17 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/scenarios":
             self._send_json([{"id": k, "name": v["name"], "payload": v["payload"]} for k, v in SCENARIOS.items()])
             return
-        if path == "/api/policies":
+        if path == "/api/integrations":
+            if not self._check_role("Admin"):
+                return
+            # Return current vault configuration (all secrets)
+            vault_path = os.getenv("VAULT_JSON_PATH", "data/secrets.json")
             try:
-                with open(POLICY_FILE, "r") as f:
-                    content = f.read()
-                self._send_json({"policy": content})
+                with open(vault_path, "r") as f:
+                    config = json.load(f)
             except FileNotFoundError:
-                self._send_json({"policy": ""}, 404)
+                config = {}
+            self._send_json({"config": config})
             return
         if path == "/events":
             self._handle_sse()
@@ -336,16 +340,17 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
         logger = logging.getLogger("apcs")
         logger.info("PUT %s from %s", path, self.client_address[0])
-        if path == "/api/policies":
+        if path == "/api/integrations":
             if not self._check_role("Admin"):
                 return
             body_bytes = self._read_body()
             body = json.loads(body_bytes) if body_bytes else {}
-            content = body.get("policy", "")
-            with open(POLICY_FILE, "w") as f:
-                f.write(content)
-            global policy_engine
-            policy_engine = SimpleRegoEngine(POLICY_FILE)
+            config = body.get("config", {})
+            vault_path = os.getenv("VAULT_JSON_PATH", "data/secrets.json")
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(vault_path), exist_ok=True)
+            with open(vault_path, "w") as f:
+                json.dump(config, f, indent=2)
             self._send_json({"status": "updated"})
             return
         if parsed.path == "/api/notifications/config":
@@ -399,6 +404,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
+            # Reload token file to catch newly added tokens during runtime
+            auth_manager._load()
             info = auth_manager.validate_token(token)
             if info:
                 self._auth_token = token

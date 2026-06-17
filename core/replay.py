@@ -1,9 +1,21 @@
 import json
 import time
-from .db import get_encrypted_conn
 import os
 import threading
+import hashlib
+import base64
 from typing import Dict, Any, List, Optional
+from cryptography.fernet import Fernet
+from .db import get_encrypted_conn
+from .vault import get_secret
+
+
+def _fernet_from_secret(secret: str) -> Fernet:
+    """Derive a Fernet instance from an arbitrary secret string.
+    The secret is hashed with SHA‑256 to obtain 32 bytes, then base64‑url‑encoded
+    as required by cryptography.fernet.Fernet."""
+    key = hashlib.sha256(secret.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
 
 
 class ReplayStore:
@@ -20,6 +32,12 @@ class ReplayStore:
             "scan_id TEXT, node TEXT, output TEXT, confidence REAL, timestamp REAL)"
         )
         self.conn.commit()
+        # Fernet instance for encrypting trace data
+        self._fernet = _fernet_from_secret(get_secret("db_encryption_key"))
+        # Start background purge thread (runs every hour)
+        self._purge_thread = threading.Thread(target=self._purge_loop, daemon=True)
+        self._purge_thread.start()
+
 
     def store(self, scan_id: str, entry_payload: Dict[str, Any], node_outputs: Dict[str, Any],
               final_decision: str, risk_score: float, confidence: float, actions: List[str]):
@@ -33,9 +51,12 @@ class ReplayStore:
             "actions": actions,
         }
         with self.lock:
+            # Serialize then encrypt the trace data
+            plain = json.dumps(trace_data).encode()
+            encrypted = self._fernet.encrypt(plain).decode()
             self.conn.execute(
                 "INSERT OR REPLACE INTO replay_traces (scan_id, data, created_at) VALUES (?, ?, ?)",
-                (scan_id, json.dumps(trace_data), time.time()),
+                (scan_id, encrypted, time.time()),
             )
             self.conn.commit()
 
@@ -46,12 +67,18 @@ class ReplayStore:
             ).fetchone()
             if not row:
                 placeholder = {
-                    "scan_id": scan_id, "input": {}, "node_outputs": {},
-                    "decision": "", "risk_score": 0, "confidence": 0, "actions": [],
+                    "scan_id": scan_id,
+                    "input": {},
+                    "node_outputs": {},
+                    "decision": "",
+                    "risk_score": 0,
+                    "confidence": 0,
+                    "actions": [],
                 }
+                encrypted_placeholder = self._fernet.encrypt(json.dumps(placeholder).encode()).decode()
                 self.conn.execute(
                     "INSERT INTO replay_traces (scan_id, data, created_at) VALUES (?, ?, ?)",
-                    (scan_id, json.dumps(placeholder), time.time()),
+                    (scan_id, encrypted_placeholder, time.time()),
                 )
             self.conn.execute(
                 "INSERT INTO replay_events (scan_id, node, output, confidence, timestamp) VALUES (?, ?, ?, ?, ?)",
@@ -66,7 +93,9 @@ class ReplayStore:
             ).fetchone()
             if not row:
                 return None
-            trace = json.loads(row[0])
+            # Decrypt the stored trace data
+            decrypted = self._fernet.decrypt(row[0].encode()).decode()
+            trace = json.loads(decrypted)
             trace["timestamp"] = row[1]
             events = self.conn.execute(
                 "SELECT node, output, confidence, timestamp FROM replay_events WHERE scan_id = ? ORDER BY timestamp",
@@ -83,6 +112,26 @@ class ReplayStore:
             rows = self.conn.execute("SELECT scan_id FROM replay_traces").fetchall()
             return [r[0] for r in rows]
 
+    # ---- Purge old entries (7‑day TTL) ----
+    def purge_old(self):
+        """Delete replay traces and events older than 7 days."""
+        cutoff = time.time() - 7 * 24 * 3600
+        with self.lock:
+            self.conn.execute(
+                "DELETE FROM replay_traces WHERE created_at < ?", (cutoff,)
+            )
+            self.conn.execute(
+                "DELETE FROM replay_events WHERE timestamp < ?", (cutoff,)
+            )
+            self.conn.commit()
+
+    def _purge_loop(self):
+        """Background thread loop – runs purge_old() every hour."""
+        while True:
+            time.sleep(3600)  # 1 hour
+            self.purge_old()
+
+
     def stats(self) -> Dict[str, Any]:
         rows = self.conn.execute("SELECT data FROM replay_traces").fetchall()
         total = len(rows)
@@ -96,7 +145,8 @@ class ReplayStore:
         actions_count = {}
 
         for row in rows:
-            trace = json.loads(row[0])
+            decrypted = self._fernet.decrypt(row[0].encode()).decode()
+            trace = json.loads(decrypted)
             risks.append(trace.get("risk_score", 0))
             confs.append(trace.get("confidence", 0))
             if trace.get("decision") == "ALLOW":

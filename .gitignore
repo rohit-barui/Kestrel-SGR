@@ -4,4 +4,6 @@ __pycache__/
 .venv
 data/
 .coverage
-htmlcov/
+server.log
+server_error.log
+
