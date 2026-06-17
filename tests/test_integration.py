@@ -1,19 +1,28 @@
 import unittest, json, threading, time, http.client
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from server import PORT
 
 def _auth_headers():
-    """Read the auto-generated token from apcs_tokens.json."""
+    """Read token from apcs_tokens.json, preferring an Admin role if present."""
     token_file = os.environ.get("APCS_TOKEN_FILE", "apcs_tokens.json")
     if os.path.exists(token_file):
         with open(token_file) as f:
             tokens = json.load(f)
-        if tokens:
-            token = next(iter(tokens))
+        # Prefer token with Admin role
+        admin_token = None
+        for t, info in tokens.items():
+            if info.get("role") == "Admin":
+                admin_token = t
+                break
+        token = admin_token if admin_token else (next(iter(tokens)) if tokens else None)
+        if token:
             return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     return {"Content-Type": "application/json"}
 
 class TestServerIntegration(unittest.TestCase):
+    server = None
+    thread = None
+
     @classmethod
     def setUpClass(cls):
         from server import APIHandler, ThreadedHTTPServer, PORT
@@ -21,47 +30,46 @@ class TestServerIntegration(unittest.TestCase):
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         time.sleep(1)
-        cls.conn = http.client.HTTPConnection('127.0.0.1', PORT, timeout=5)
-        cls.headers = _auth_headers()
 
     @classmethod
     def tearDownClass(cls):
-        cls.conn.close()
-        cls.server.shutdown()
+        if cls.server:
+            cls.server.shutdown()
+            cls.server.server_close()
+        if hasattr(cls, 'thread'):
+            cls.thread.join()
+
+    def _request(self, method, path, body=None):
+        conn = http.client.HTTPConnection('127.0.0.1', PORT, timeout=5)
+        headers = _auth_headers()
+        try:
+            conn.request(method, path, body, headers)
+            resp = conn.getresponse()
+            data = resp.read()
+            return resp.status, json.loads(data) if data else {}
+        finally:
+            conn.close()
 
     def test_scenarios_endpoint(self):
-        self.conn.request('GET', '/api/scenarios', headers=self.headers)
-        resp = self.conn.getresponse()
-        data = json.loads(resp.read())
-        self.assertEqual(resp.status, 200)
+        status, data = self._request('GET', '/api/scenarios')
+        self.assertEqual(status, 200)
         self.assertGreater(len(data), 0)
 
     def test_scan_endpoint_threat(self):
-        body = json.dumps({"email": "click https://phish.xyz password: test"})
-        self.conn.request('POST', '/api/scan', body, self.headers)
-        resp = self.conn.getresponse()
-        data = json.loads(resp.read())
+        status, data = self._request('POST', '/api/scan', json.dumps({"email": "click https://phish.xyz password: test"}))
         self.assertIn("scan_id", data)
         self.assertIn("decision", data)
 
     def test_scan_endpoint_clean(self):
-        body = json.dumps({"email": "meeting at 3pm"})
-        self.conn.request('POST', '/api/scan', body, self.headers)
-        resp = self.conn.getresponse()
-        data = json.loads(resp.read())
+        status, data = self._request('POST', '/api/scan', json.dumps({"email": "meeting at 3pm"}))
         self.assertEqual(data["risk_score"], 0)
 
     def test_policies_endpoint(self):
-        self.conn.request('GET', '/api/policies', headers=self.headers)
-        resp = self.conn.getresponse()
-        data = json.loads(resp.read())
+        status, data = self._request('GET', '/api/policies')
         self.assertIn("policy", data)
 
     def test_replay_endpoint(self):
-        body = json.dumps({"email": "test"})
-        self.conn.request('POST', '/api/scan', body, self.headers)
-        r = json.loads(self.conn.getresponse().read())
-        self.conn.request('GET', f'/api/replay/{r["scan_id"]}', headers=self.headers)
-        resp = self.conn.getresponse()
-        trace = json.loads(resp.read())
-        self.assertEqual(trace["scan_id"], r["scan_id"])
+        status, scan_data = self._request('POST', '/api/scan', json.dumps({"email": "test"}))
+        scan_id = scan_data["scan_id"]
+        status, trace = self._request('GET', f'/api/replay/{scan_id}')
+        self.assertEqual(trace["scan_id"], scan_id)

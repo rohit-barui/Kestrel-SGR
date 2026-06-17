@@ -85,4 +85,14 @@ class Notifier:
         if webhook_url:
             self.send_webhook(webhook_url, {"scan_id": scan_id, "risk_score": risk_score, "decision": decision, "actions": actions, "dominance": dominance})
 
+        if risk_score >= 80:
+            from core.siem_connectors import send_to_siem
+            send_to_siem({
+                "scan_id": scan_id,
+                "risk_score": risk_score,
+                "decision": decision,
+                "actions": actions,
+                "dominance": dominance,
+            })
+
 notifier = Notifier()
