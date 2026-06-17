@@ -24,7 +24,7 @@ The script:
 - Creates a virtual environment (`.venv`)
 - Installs `requirements.txt`
 - Launches `python server.py`
-- Opens the dashboard automatically in the default browser (`http://localhost:8080`)
+- Opens the dashboard automatically in the default browser (`http://localhost:9090`)
 
 ## API Endpoints
 | Method | Path | Description |

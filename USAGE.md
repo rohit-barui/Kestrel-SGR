@@ -17,7 +17,7 @@ python server.py
 ```
 You should see something like:
 ```
-Serving HTTP on localhost port 8080 …
+Serving HTTP on localhost port 9090 …
 ```
 The server will:
 - expose REST endpoints under `/api/*`
@@ -25,7 +25,7 @@ The server will:
 - push execution events over Server‑Sent Events (`/events`).
 
 ## 3. Open the dashboard
-Open a browser and navigate to `http://localhost:8080`.  You will see the APCS cockpit with:
+Open a browser and navigate to `http://localhost:9090`.  You will see the APCS cockpit with:
 - **Scenario selector** (top‑left)
 - **Live graph** area (center)
 - **Metrics & log** panel (right)
@@ -45,7 +45,7 @@ After the run completes, a **Replay** button becomes active.
 ## 6. Manual verification (optional)
 You can also hit the API directly with `curl`:
 ```bash
-curl -X POST http://localhost:8080/api/scan \
+curl -X POST http://localhost:9090/api/scan \
      -H "Content-Type: application/json" \
      -d @samples/credential_harvester.json
 ```
@@ -54,13 +54,13 @@ The response contains the final decision and a URL to the replay JSON.
 You can also retrieve forensic traces and generate adversarial payloads:
 ```bash
 # List all replay scan IDs
-curl http://localhost:8080/api/replay
+curl http://localhost:9090/api/replay
 
 # Get full trace for a specific scan
-curl http://localhost:8080/api/replay/<scan_id>
+curl http://localhost:9090/api/replay/<scan_id>
 
 # Generate synthetic red-team payloads
-curl http://localhost:8080/api/red-team
+curl http://localhost:9090/api/red-team
 ```
 
 ## 7. Stopping the server

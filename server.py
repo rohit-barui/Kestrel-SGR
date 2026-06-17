@@ -35,7 +35,7 @@ from skills.dominance import (
 
 os.makedirs("data", exist_ok=True)
 
-PORT = 8080
+PORT = 9090
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
 POLICY_FILE = os.path.join(os.path.dirname(__file__), "policies", "remediation.rego")
 

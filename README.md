@@ -28,7 +28,7 @@ The script:
 - Creates a virtual environment (`.venv`)
 - Installs `requirements.txt`
 - Launches `python server.py`
-- Opens the dashboard automatically in the default browser (`http://localhost:8080`)
+- Opens the dashboard automatically in the default browser (`http://localhost:9090`)
 
 
 ---
@@ -149,7 +149,7 @@ The UI shows a live graph, metrics panel, action log and replay controls.
 ## Usage Walk‑through (`USAGE.md`)
 1. Set up virtual environment and install `requirements.txt`.
 2. Run `python server.py`.
-3. Open <http://localhost:8080>.
+3. Open <http://localhost:9090>.
 4. Select a scenario (e.g., Credential Harvester) and click **Run**.
 5. Observe live graph updates and final decision.
 6. Click **Replay** to step through the forensic trace.
