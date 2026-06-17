@@ -1,4 +1,6 @@
-**Installation** – Run `install.ps1` (one‑click) to set up the virtual environment, install dependencies, and start the server.
+**Installation** – Run `Kestrel-sgr.ps1` (one‑click) to set up the virtual environment, install dependencies, and start the server.
+
+
 
 
 

@@ -22,7 +22,7 @@ git clone https://github.com/your-org/Kestrel-SGR.git
 cd Kestrel-SGR
 
 # 2️⃣ Run the installer script (creates venv, installs deps, starts server)
-.\install.ps1
+.\Kestrel-sgr.ps1
 ```
 The script:
 - Creates a virtual environment (`.venv`)
@@ -180,7 +180,7 @@ Tests cover engine DAG execution, policy evaluation, saga rollback, skill functi
 ---
 
 ## Installation Options
-- **One‑click** – Run the provided `install.ps1` script (PowerShell) to set up the virtual environment, install dependencies, and launch the server automatically.
+- **One‑click** – Run the provided `Kestrel-sgr.ps1` script (PowerShell) to set up the virtual environment, install dependencies, and launch the server automatically.
 - **Manual** – Follow the Quick‑Start steps (clone, create venv, `pip install -r requirements.txt`, run `python server.py`).
 
 ## Getting the Code
@@ -204,4 +204,5 @@ git clone https://github.com/your-org/Kestrel-SGR.git
 
 ## License
 This project is licensed under the terms of the `LICENSE` file.
+
 

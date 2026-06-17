@@ -18,7 +18,7 @@ git clone https://github.com/your-org/Kestrel-SGR.git
 cd Kestrel-SGR
 
 # 2️⃣ Run the installer script (creates venv, installs deps, starts server)
-.\install.ps1
+.\Kestrel-sgr.ps1
 ```
 The script:
 - Creates a virtual environment (`.venv`)
