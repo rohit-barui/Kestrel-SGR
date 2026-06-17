@@ -11,7 +11,7 @@ async function apiFetch(url, options = {}) {
 
 async function checkAuth() {
   if (!apiToken) {
-    const res = await fetch("/api/health");
+    const res = await fetch("/api/scenarios");
     if (res.status === 401) {
       document.getElementById("loginOverlay").style.display = "flex";
       return false;
@@ -46,6 +46,7 @@ document.getElementById("loginBtn")?.addEventListener("click", async () => {
     document.getElementById("loginOverlay").style.display = "none";
     loadScenarios();
     loadAnalytics();
+    loadIntegrations();
   } else {
     document.getElementById("loginError").style.display = "block";
   }
@@ -149,13 +150,20 @@ document.getElementById("runCustomBtn").addEventListener("click", runCustomScan)
 
 async function runCustomScan() {
   const textarea = document.getElementById("customScanInput");
-  let body;
-  try {
-    body = JSON.parse(textarea.value);
-  } catch {
-    log("Invalid JSON in custom scan input", "error");
+  const text = textarea.value.trim();
+  if (!text) {
+    log("Please enter text to scan.", "error");
     return;
   }
+
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // If it's not valid JSON, treat the raw text as the email content automatically
+    body = { email: text };
+  }
+
   if (!body.email && !body.sms && !body.voice) {
     log("Custom scan payload must contain 'email', 'sms', or 'voice' field", "error");
     return;
@@ -285,7 +293,7 @@ function updateAllNodeColors() {
 }
 
 function setupSSE() {
-  const evtSource = new EventSource("/events");
+  const evtSource = new EventSource("/events?token=" + apiToken);
   evtSource.addEventListener("skill_done", (e) => {
     const data = JSON.parse(e.data);
     const isError = data.error || data.output?.error;
@@ -333,12 +341,9 @@ function setupSSE() {
     replayEvents = [];
     replayIndex = -1;
     replayStep.textContent = "Replay ready";
-    replayPayload.innerHTML = `{ } <br><button id="fpBtn" style="margin-top: 10px; font-size: 10px;">Mark as False Positive</button>`;
-    document.getElementById("fpBtn").onclick = async () => {
-      await apiFetch("/api/analytics/quality", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({scan_id: state.scanId}) });
-      document.getElementById("fpBtn").textContent = "Reported";
-      document.getElementById("fpBtn").disabled = true;
-    };
+    replayPayload.textContent = "{ }";
+    document.getElementById("fpBtn").disabled = false;
+    document.getElementById("fpBtn").textContent = "Mark as False Positive";
     log(`Run complete: ${data.decision} (risk: ${data.risk_score})`, data.decision === "ALLOW" ? "success" : "action");
   });
   evtSource.addEventListener("run_error", (e) => {
@@ -609,8 +614,70 @@ window.addEventListener("load", async () => {
   setupSSE();
   drawGraph();
   loadAnalytics();
+  loadIntegrations();
 });
 
 window.addEventListener("resize", () => {
   drawGraph();
+});
+
+// Tab Switching
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.target).classList.add("active");
+  });
+});
+
+// Integrations
+async function loadIntegrations() {
+  try {
+    const res = await apiFetch("/api/integrations");
+    if (res.ok) {
+      const data = await res.json();
+      const c = data.config || {};
+      document.getElementById("splunkToken").value = c.splunk_token || "";
+      document.getElementById("splunkUrl").value = c.splunk_url || "";
+      document.getElementById("sentinelWorkspace").value = c.sentinel_workspace || "";
+      document.getElementById("secopsKey").value = c.secops_key || "";
+      document.getElementById("adminEmail").value = c.admin_email || "";
+      document.getElementById("slackWebhook").value = c.slack_webhook || "";
+      document.getElementById("actionWebhook").value = c.action_webhook || "";
+    }
+  } catch(e) {}
+}
+
+document.getElementById("saveIntegrationsBtn")?.addEventListener("click", async () => {
+  const config = {
+    splunk_token: document.getElementById("splunkToken").value,
+    splunk_url: document.getElementById("splunkUrl").value,
+    sentinel_workspace: document.getElementById("sentinelWorkspace").value,
+    secops_key: document.getElementById("secopsKey").value,
+    admin_email: document.getElementById("adminEmail").value,
+    slack_webhook: document.getElementById("slackWebhook").value,
+    action_webhook: document.getElementById("actionWebhook").value,
+  };
+  try {
+    const res = await apiFetch("/api/integrations", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config })
+    });
+    if (res.ok) {
+      const toast = document.getElementById("toast");
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    } else if (res.status === 403) {
+      alert("Unauthorized: Admin role required to save integrations.");
+    }
+  } catch(e) {}
+});
+
+document.getElementById("fpBtn")?.addEventListener("click", async () => {
+  if (!state.scanId) return;
+  await apiFetch("/api/analytics/quality", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({scan_id: state.scanId}) });
+  document.getElementById("fpBtn").textContent = "Reported";
+  document.getElementById("fpBtn").disabled = true;
 });

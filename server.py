@@ -402,8 +402,14 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             vault_path = os.getenv("VAULT_JSON_PATH", "data/secrets.json")
             # Ensure directory exists
             os.makedirs(os.path.dirname(vault_path), exist_ok=True)
+            try:
+                with open(vault_path, "r") as f:
+                    existing_config = json.load(f)
+            except FileNotFoundError:
+                existing_config = {}
+            existing_config.update(config)
             with open(vault_path, "w") as f:
-                json.dump(config, f, indent=2)
+                json.dump(existing_config, f, indent=2)
             self._send_json({"status": "updated"})
             return
         if path == "/api/notifications/config":
@@ -447,8 +453,9 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 
     def _check_auth(self) -> bool:
         # Skip auth for static files, login endpoint, and health/metrics
-        path = urlparse(self.path).path
-        if path in ("/api/health", "/api/metrics", "/api/auth/login", "/") or path.startswith("/api/auth/"):
+        parsed_path = self.path.split("?")
+        path = parsed_path[0]
+        if path in ("/api/health", "/api/metrics", "/api/auth/login", "/", "/index.html", "/style.css", "/app.js", "/favicon.ico") or path.startswith("/api/auth/"):
             return True
 
         # Allow if no tokens configured (dev mode)
@@ -456,8 +463,16 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             return True
 
         auth_header = self.headers.get("Authorization", "")
+        token = ""
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
+        elif len(parsed_path) > 1:
+            qs = parsed_path[1]
+            for param in qs.split("&"):
+                if param.startswith("token="):
+                    token = param[6:]
+
+        if token:
             # Reload token file to catch newly added tokens during runtime
             auth_manager._load()
             info = auth_manager.validate_token(token)
@@ -626,6 +641,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 content = f.read()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store, must-revalidate")
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
