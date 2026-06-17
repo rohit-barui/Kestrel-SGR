@@ -11,20 +11,20 @@
 - **Dashboard** – Glass‑morphic web UI to run preset threat scenarios, visualise the skill graph and view forensics.
 - **Transaction saga & gateway** – Automatic rollback of side‑effects on failure.
 
-## Quick Start
-```bash
-# Clone the repository (already done under Kestrel‑SGR‑repo)
-cd "C:/Users/user/Documents/projects/Kestrel SGR/Kestrel-SGR-repo"
+## Quick Start – One‑Click Install
+```powershell
+# 1️⃣ Clone the repo (skip if already present)
+git clone https://github.com/your-org/Kestrel-SGR.git
+cd Kestrel-SGR
 
-# Install dependencies (Python 3.9+)
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt  # create this file if needed
-
-# Run the server
-python server.py
+# 2️⃣ Run the installer script (creates venv, installs deps, starts server)
+.\install.ps1
 ```
-Open a browser at <http://localhost:8080> to access the dashboard.
+The script:
+- Creates a virtual environment (`.venv`)
+- Installs `requirements.txt`
+- Launches `python server.py`
+- Opens the dashboard automatically in the default browser (`http://localhost:8080`)
 
 ## API Endpoints
 | Method | Path | Description |

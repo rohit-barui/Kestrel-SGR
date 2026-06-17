@@ -1,4 +1,6 @@
-# Architecture Overview
+**Installation** – Run `install.ps1` (one‑click) to set up the virtual environment, install dependencies, and start the server.
+
+
 
 APCS is composed of three logical planes that communicate through a **Skill Graph Runtime (SGR)**.  The runtime executes a directed‑acyclic graph (DAG) of **skill** nodes, validates input/output schemas, aggregates confidence scores and finally triggers remediation actions.
 

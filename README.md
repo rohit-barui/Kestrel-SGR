@@ -15,20 +15,21 @@
 
 ---
 
-## Quick Start
-```bash
-# Clone the repository (already done under Kestrel‑SGR)
-cd "C:/Users/user/Documents/projects/Kestrel-SGR"
+## Quick Start – One‑Click Install
+```powershell
+# 1️⃣ Clone the repo (skip if already present)
+git clone https://github.com/your-org/Kestrel-SGR.git
+cd Kestrel-SGR
 
-# Install dependencies (Python 3.9+)
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-
-# Run the server
-python server.py
+# 2️⃣ Run the installer script (creates venv, installs deps, starts server)
+.\install.ps1
 ```
-Open a browser at <http://localhost:8080> to access the dashboard.
+The script:
+- Creates a virtual environment (`.venv`)
+- Installs `requirements.txt`
+- Launches `python server.py`
+- Opens the dashboard automatically in the default browser (`http://localhost:8080`)
+
 
 ---
 
@@ -178,5 +179,29 @@ Tests cover engine DAG execution, policy evaluation, saga rollback, skill functi
 
 ---
 
+## Installation Options
+- **One‑click** – Run the provided `install.ps1` script (PowerShell) to set up the virtual environment, install dependencies, and launch the server automatically.
+- **Manual** – Follow the Quick‑Start steps (clone, create venv, `pip install -r requirements.txt`, run `python server.py`).
+
+## Getting the Code
+```powershell
+# Clone the repository (HTTPS)
+git clone https://github.com/your-org/Kestrel-SGR.git
+# Or via SSH if you have access
+# git clone git@github.com:your-org/Kestrel-SGR.git
+```
+
+## Documentation Hub
+- **Architecture Overview (HLD/LLD)** – `docs/ARCHITECTURE.md`
+- **Repository Structure** – `docs/README.md`
+- **Core Package Details** – `docs/CORE.md`
+- **Skills Package Details** – `docs/SKILLS.md`
+- **Policy Files** – `docs/POLICIES.md`
+- **Web UI Guide** – `docs/WEB_UI.md`
+- **Usage Walk‑through** – `docs/USAGE.md`
+- **Testing Instructions** – `docs/TESTING.md`
+- **Contributing Guide** – `docs/CONTRIBUTING.md`
+
 ## License
-See the `LICENSE` file for details.
+This project is licensed under the terms of the `LICENSE` file.
+

@@ -1,4 +1,6 @@
-# APCS Development Plan – Phased Roadmap
+**Installation** – Run `install.ps1` (one‑click) to set up the virtual environment, install dependencies, and start the server.
+
+
 
 ## Overview
 All new work will be performed on a single dedicated development branch.
