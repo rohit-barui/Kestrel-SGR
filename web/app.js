@@ -182,6 +182,7 @@ async function runCustomScan() {
 document.getElementById("piiProceed").addEventListener("click", () => {
   document.getElementById("piiOverlay").style.display = "none";
   if (pendingCustomScan) {
+    pendingCustomScan.override_pii = true;
     performCustomScan(pendingCustomScan);
     pendingCustomScan = null;
   }
@@ -301,13 +302,29 @@ function setupSSE() {
       policyStatusEl.style.color = data.decision === "ALLOW" ? "var(--accent-emerald)" : "var(--accent-rose)";
       confidenceEl.textContent = data.confidence + "%";
       mlConfidenceEl.textContent = data.ml_confidence !== null ? data.ml_confidence + "%" : "-";
-      actionsEl.textContent = data.actions.join(", ");
+      actionsEl.innerHTML = "";
+      data.actions.forEach(action => {
+        const btn = document.createElement("button");
+        btn.textContent = action;
+        btn.style.marginRight = "5px";
+        btn.style.padding = "4px 8px";
+        btn.style.fontSize = "10px";
+        btn.onclick = async () => {
+          btn.disabled = true;
+          await apiFetch("/api/action", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, target: state.scanId}) });
+          btn.textContent = "Executed";
+        };
+        actionsEl.appendChild(btn);
+      });
     if (data.dominance) {
       if (data.dominance.honey_credentials.length) log("Honey creds deployed", "action");
       if (Object.keys(data.dominance.rewritten_urls).length) log("Links rewritten to proxy", "action");
       if (data.dominance.blocked_ips.length) log("IPs blocked: " + data.dominance.blocked_ips.join(", "), "action");
       if (data.dominance.quarantined) log("Email quarantined", "action");
       if (data.dominance.mfa_reset) log("MFA reset triggered", "action");
+    }
+    if (data.pii_redacted) {
+      log("Training Notice: PII was automatically redacted from this payload before external processing.", "action");
     }
     statusBadge.textContent = data.decision;
     statusBadge.style.background = data.decision === "ALLOW" ? "var(--accent-emerald)" : "var(--accent-rose)";
@@ -316,7 +333,12 @@ function setupSSE() {
     replayEvents = [];
     replayIndex = -1;
     replayStep.textContent = "Replay ready";
-    replayPayload.textContent = "{ }";
+    replayPayload.innerHTML = `{ } <br><button id="fpBtn" style="margin-top: 10px; font-size: 10px;">Mark as False Positive</button>`;
+    document.getElementById("fpBtn").onclick = async () => {
+      await apiFetch("/api/analytics/quality", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({scan_id: state.scanId}) });
+      document.getElementById("fpBtn").textContent = "Reported";
+      document.getElementById("fpBtn").disabled = true;
+    };
     log(`Run complete: ${data.decision} (risk: ${data.risk_score})`, data.decision === "ALLOW" ? "success" : "action");
   });
   evtSource.addEventListener("run_error", (e) => {

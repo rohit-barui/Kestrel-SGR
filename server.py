@@ -346,6 +346,20 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             contains_pii = redacted != text
             self._send_json({"contains_pii": contains_pii, "redacted": redacted})
             return
+        if path == "/api/action":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            from core.remediation import get_active_adapter
+            success = get_active_adapter().execute(body.get("action", ""), body.get("target", ""), body.get("context", {}))
+            self._send_json({"status": "executed" if success else "failed"})
+            return
+        if path == "/api/analytics/quality":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            # Mark False Positive in the DB or feed to ML
+            logger.info(f"Marked scan {body.get('scan_id')} as False Positive")
+            self._send_json({"status": "feedback_recorded"})
+            return
         self._send_json({"error": "Not found"}, 404)
 
     def do_PUT(self):
@@ -392,10 +406,12 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 json.dump(config, f, indent=2)
             self._send_json({"status": "updated"})
             return
+        if path == "/api/notifications/config":
             if not self._check_role("Admin"):
                 return
             body_bytes = self._read_body()
             body = json.loads(body_bytes) if body_bytes else {}
+            config_path = os.environ.get("APCS_NOTIFY_CONFIG", "notify_config.json")
             with open(config_path, "w") as f:
                 json.dump(body, f)
             from core.notifications import notifier
@@ -525,6 +541,21 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": err}, 400)
             return
         scan_id = uuid.uuid4().hex[:8]
+        
+        from core.privacy import redact_pii
+        override_pii = body.get("override_pii", False)
+        for key in ("email", "sms", "voice"):
+            if key in body and isinstance(body[key], str):
+                redacted = redact_pii(body[key])
+                if redacted != body[key]:
+                    if override_pii:
+                        logger.warning("USER_BYPASSED_PII_WARNING")
+                        from core.notifications import notifier
+                        notifier.alert(scan_id, 100, "PII_OVERRIDE", [f"User bypassed PII warning for {key}"], {})
+                    else:
+                        body[key] = redacted
+                        body["_pii_redacted"] = True
+
         broadcast("scan_start", {"scan_id": scan_id})
         gateway = Gateway()
         def on_done(name, result):
@@ -571,8 +602,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             drift_status = drift_tracker.stats("remediation_rule")
             broadcast("drift_status", {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status})
 
-            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
-            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None)})
+            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "pii_redacted": body.get("_pii_redacted", False)})
+            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None), "pii_redacted": body.get("_pii_redacted", False)})
         except Exception as e:
             broadcast("run_error", {"scan_id": scan_id, "error": str(e)})
             self._send_json({"scan_id": scan_id, "error": str(e)}, 500)

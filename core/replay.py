@@ -171,9 +171,13 @@ class ReplayStore:
         ).fetchall()
         trend = []
         for row in reversed(rows):
-            trace = json.loads(row[0])
+            try:
+                decrypted = self._fernet.decrypt(row[0].encode()).decode()
+                trace = json.loads(decrypted)
+            except Exception:
+                continue
             trend.append({
-                "scan_id": trace["scan_id"],
+                "scan_id": trace.get("scan_id", ""),
                 "risk_score": trace.get("risk_score", 0),
                 "decision": trace.get("decision", ""),
                 "timestamp": trace.get("timestamp", 0),

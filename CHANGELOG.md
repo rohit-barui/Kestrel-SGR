@@ -5,6 +5,17 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 ## [Unreleased]
 
 ### Added
+- **SOAR Adapter Architecture** (`core/remediation.py`) – Vendor-agnostic execution framework for playbook actions.
+- **SOAR Endpoints & UI** – New `/api/action` endpoint. Dashboard recommendations converted into functional playbook execution buttons.
+- **PII Redaction Enforcement** – The `/api/scan` endpoint natively intercepts and redacts PII before external analysis.
+- **Escalation Protocols** – Overriding PII warnings directly fires SIEM logs and Admin DL alerts.
+- **Quality Analytics** – "Mark as False Positive" feedback loop UI and `/api/analytics/quality` endpoint.
+
+### Fixed
+- **Encryption Crash** – Fixed fatal JSON decode error in `core/replay.py` `risk_trend()` method where encrypted data was not decrypted before parsing.
+- **Duplicate Backend Code** – Resolved duplicate HTTP handlers in `server.py` for config PUT endpoints.
+
+
 - **Celery integration** (`core/celery_app.py`, `core/tasks.py`) – Celery app with in-memory broker/backend; `run_skill` task wrapper that resolves skill functions from a global registry.
 - **Skill registry** (`core/engine.py`) – `_SKILL_REGISTRY` and `register_skill()` method so Celery workers can resolve skill functions by name.
 - **RBAC in AuthManager** (`core/auth.py`) – token now stores a `role` field (default `Analyst`). New methods: `has_role(token, role)`.
