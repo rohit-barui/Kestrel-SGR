@@ -133,7 +133,7 @@ class SSEQueue:
         return msg
 
 class RateLimiter:
-    def __init__(self, max_requests=20, window=60):
+    def __init__(self, max_requests=1000, window=60):
         self.max_requests = max_requests
         self.window = window
         self.clients = defaultdict(list)
