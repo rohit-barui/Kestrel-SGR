@@ -1,12 +1,43 @@
-version: "3.9"
+version: '3.8'
+
 services:
-  apcs:
-    build: .
-    ports:
-      - "8080:8080"
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ksg_app
+    environment:
+      - VAULT_JSON_PATH=/app/data/secrets.json
     volumes:
-      - apcs_data:/app/data
+      - ./data:/app/data
+    expose:
+      - "9090"
     restart: unless-stopped
 
-volumes:
-  apcs_data:
+  nginx:
+    image: nginx:alpine
+    container_name: ksg_nginx
+    ports:
+      - "443:443"
+    depends_on:
+      - app
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/selfsigned.crt:/etc/ssl/certs/selfsigned.crt:ro
+      - ./docker/selfsigned.key:/etc/ssl/private/selfsigned.key:ro
+      - ./data:/app/data
+    restart: unless-stopped
+
+  loadtest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ksg_loadtest
+    command: python docker/load_test.py
+    depends_on:
+      - app
+    environment:
+      - TARGET_URL=https://localhost
+    volumes:
+      - ./data:/app/data
+    restart: "no"

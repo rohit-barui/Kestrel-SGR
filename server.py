@@ -265,6 +265,16 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             )
             self._send_json({"metrics": metrics})
             return
+        if path == "/api/policies":
+            if not self._check_role("Admin"):
+                return
+            try:
+                with open(POLICY_FILE, "r", encoding="utf-8") as f:
+                    policy_content = f.read()
+                self._send_json({"policy": policy_content})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
 
         web_path = os.path.join(WEB_DIR, path.lstrip("/") or "index.html")
         if os.path.isfile(web_path):
@@ -349,6 +359,26 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         path = parsed.path
         logger = logging.getLogger("apcs")
         logger.info("PUT %s from %s", path, self.client_address[0])
+        if path == "/api/policies":
+            if not self._check_role("Admin"):
+                return
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            policy_content = body.get("policy")
+            if policy_content is None:
+                self._send_json({"error": "Missing 'policy' in request body"}, 400)
+                return
+            try:
+                # Write new policy to file
+                with open(POLICY_FILE, "w", encoding="utf-8") as f:
+                    f.write(policy_content)
+                # Reload policy engine to pick up changes
+                global policy_engine
+                policy_engine = SimpleRegoEngine(POLICY_FILE)
+                self._send_json({"status": "updated"})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+            return
         if path == "/api/integrations":
             if not self._check_role("Admin"):
                 return
@@ -362,7 +392,6 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 json.dump(config, f, indent=2)
             self._send_json({"status": "updated"})
             return
-        if parsed.path == "/api/notifications/config":
             if not self._check_role("Admin"):
                 return
             body_bytes = self._read_body()
