@@ -1,5 +1,5 @@
 import unittest
-from skills.dominance import deploy_honey_credentials, rewrite_links, containment_actions, block_ip, quarantine_email, trigger_mfa_reset
+from skills.dominance import deploy_honey_credentials, rewrite_links, containment_actions, block_ip, quarantine_email, trigger_mfa_reset, rollback_noop
 
 class TestDominance(unittest.TestCase):
     def test_deploy_honey_creds_on_block(self):
@@ -89,6 +89,10 @@ class TestDominance(unittest.TestCase):
         self.assertEqual(result["confidence"], 90)
         self.assertEqual(len(result["side_effects"]), 1)
         self.assertEqual(result["side_effects"][0]["action"], "trigger_mfa_reset")
+
+    def test_rollback_noop(self):
+        # rollback_noop must not raise and return None
+        self.assertIsNone(rollback_noop({}))
 
 if __name__ == "__main__":
     unittest.main()

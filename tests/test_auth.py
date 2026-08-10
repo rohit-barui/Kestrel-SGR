@@ -95,3 +95,11 @@ def test_has_role_returns_false_for_invalid_token(isolated_env):
     from core.auth import AuthManager
     mgr = AuthManager()
     assert mgr.has_role("invalid-token", "Analyst") is False
+
+def test_corrupt_token_file_treated_as_empty(tmp_path):
+    # Write invalid JSON to the token file; AuthManager must not crash
+    from core.auth import AuthManager
+    token_path = tmp_path / "corrupt_tokens.json"
+    token_path.write_text("{not valid json[[[")
+    mgr = AuthManager(str(token_path))
+    assert mgr.list_tokens() == {}

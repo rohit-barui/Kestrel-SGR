@@ -27,6 +27,15 @@ class TestCache(unittest.TestCase):
     def test_nonexistent(self):
         self.assertIsNone(self.cache.get("nope"))
 
+    def test_clear_removes_expired_only(self):
+        # Expired entry should be removed by clear()
+        self.cache.set("expired", "old", ttl=-1)
+        # Fresh entry should survive clear()
+        self.cache.set("fresh", "new", ttl=3600)
+        self.cache.clear()
+        self.assertIsNone(self.cache.get("expired"))
+        self.assertEqual(self.cache.get("fresh"), "new")
+
 
 if __name__ == "__main__":
     unittest.main()

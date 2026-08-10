@@ -7,7 +7,7 @@ import base64
 from typing import Dict, Any, List, Optional
 from cryptography.fernet import Fernet
 from .db import get_encrypted_conn
-from .vault import get_secret
+from .vault import ensure_secret
 
 
 def _fernet_from_secret(secret: str) -> Fernet:
@@ -33,7 +33,7 @@ class ReplayStore:
         )
         self.conn.commit()
         # Fernet instance for encrypting trace data
-        self._fernet = _fernet_from_secret(get_secret("db_encryption_key"))
+        self._fernet = _fernet_from_secret(ensure_secret("db_encryption_key"))
         # Start background purge thread (runs every hour)
         self._purge_thread = threading.Thread(target=self._purge_loop, daemon=True)
         self._purge_thread.start()
@@ -171,7 +171,8 @@ class ReplayStore:
         ).fetchall()
         trend = []
         for row in reversed(rows):
-            trace = json.loads(row[0])
+            decrypted = self._fernet.decrypt(row[0].encode()).decode()
+            trace = json.loads(decrypted)
             trend.append({
                 "scan_id": trace["scan_id"],
                 "risk_score": trace.get("risk_score", 0),

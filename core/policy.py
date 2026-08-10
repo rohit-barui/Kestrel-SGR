@@ -239,9 +239,6 @@ class Parser:
         elif tok[0] == "NOT":
             self.consume("NOT")
             return UnaryOp("not", self.parse_primary())
-        elif tok[0] in ("NEWLINE",):
-            self.skip_newlines()
-            return self.parse_primary()
         raise RuntimeError(f"Unexpected token in expression: {tok}")
 
 

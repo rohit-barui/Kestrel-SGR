@@ -35,6 +35,12 @@ class TestIdentityGraph(unittest.TestCase):
         paths = self.graph.query_path("a", "b")
         self.assertEqual(paths, [])
 
+    def test_query_path_missing_entity(self):
+        # Querying with an entity that was never added returns no paths
+        self.graph.add_entity("a", "entity")
+        self.assertEqual(self.graph.query_path("missing", "a"), [])
+        self.assertEqual(self.graph.query_path("a", "missing"), [])
+
     def test_get_neighbors_bidirectional(self):
         self.graph.add_entity("u1", "user")
         self.graph.add_entity("d1", "device")

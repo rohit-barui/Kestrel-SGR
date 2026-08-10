@@ -1,5 +1,5 @@
 import unittest
-from core.export import export_csv, generate_summary_report
+from core.export import export_csv, export_json_report, generate_summary_report
 
 class TestExport(unittest.TestCase):
     def test_export_csv_headers(self):
@@ -18,3 +18,9 @@ class TestExport(unittest.TestCase):
         report = generate_summary_report(stats, trend)
         self.assertIn("Total Scans: 5", report)
         self.assertIn("APCS Summary Report", report)
+
+    def test_export_json_report(self):
+        trace = {"scan_id": "abc", "risk_score": 50, "decision": "ALLOW"}
+        json_str = export_json_report(trace)
+        self.assertIn('"scan_id": "abc"', json_str)
+        self.assertIn('"decision": "ALLOW"', json_str)

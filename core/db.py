@@ -2,7 +2,7 @@ import os
 import sqlite3
 from typing import Optional
 
-from .vault import get_secret
+from .vault import get_secret, ensure_secret
 
 
 def get_encrypted_conn(path: str, key_name: str = "db_encryption_key") -> sqlite3.Connection:
@@ -11,11 +11,15 @@ def get_encrypted_conn(path: str, key_name: str = "db_encryption_key") -> sqlite
     * ``path`` – filesystem path to the SQLite database file.
     * ``key_name`` – name of the secret stored in the vault that holds the
       encryption key.  The default matches the naming used in CI tests.
+
+    If the key does not exist yet, it is generated (cryptographically random)
+    and persisted in the vault so subsequent runs reuse the same key.
     """
-    # Retrieve the raw key from the vault.  ``get_secret`` raises a clear
-    # exception if the key is missing – this prevents the DB from opening
-    # unintentionally with a blank key.
-    key = get_secret(key_name)
+    # Retrieve the raw key from the vault. If missing, bootstrap it once.
+    try:
+        key = get_secret(key_name)
+    except KeyError:
+        key = ensure_secret(key_name)
     if not isinstance(key, str) or not key:
         raise ValueError(f"Encryption key '{key_name}' is not available in the vault")
 

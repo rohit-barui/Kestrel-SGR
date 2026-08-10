@@ -33,6 +33,17 @@ class TestDecision(unittest.TestCase):
         result = aggregate_risk(payload)
         self.assertEqual(result["output"]["risk_score"], 25)
 
+    def test_aggregate_risk_whois_odd_year(self):
+        # creation_date year ends in an odd digit -> +10
+        payload = {"whois_lookup": {"whois": {"evil.com": {"creation_date": "2023-01-01"}}}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 10)
+
+    def test_aggregate_risk_whois_even_year(self):
+        payload = {"whois_lookup": {"whois": {"evil.com": {"creation_date": "2020-01-01"}}}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 0)
+
     def test_aggregate_risk_caps_at_100(self):
         payload = {"extract_urls": {"urls": ["a", "b", "c", "d", "e", "f"]}}
         result = aggregate_risk(payload)

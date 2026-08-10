@@ -72,3 +72,54 @@ def test_default_backend_creates_missing_file():
     os.environ.pop("VAULT_PROVIDER", None)
     os.environ.pop("VAULT_JSON_PATH", None)
     vault._backend = None
+
+
+def test_ensure_secret_generates_and_persists():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "secrets.json")
+        os.environ["VAULT_PROVIDER"] = "json"
+        os.environ["VAULT_JSON_PATH"] = path
+        vault._backend = None
+
+        # First call generates a value and persists it
+        value = vault.ensure_secret("db_encryption_key")
+        assert isinstance(value, str) and len(value) > 20
+        # The file now exists on disk with the generated value
+        with open(path) as f:
+            saved = json.load(f)
+        assert saved["db_encryption_key"] == value
+        # Second call returns the same persisted value (no re-generation)
+        assert vault.ensure_secret("db_encryption_key") == value
+    os.environ.pop("VAULT_PROVIDER", None)
+    os.environ.pop("VAULT_JSON_PATH", None)
+    vault._backend = None
+
+
+def test_ensure_secret_uses_provided_value():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "secrets.json")
+        os.environ["VAULT_PROVIDER"] = "json"
+        os.environ["VAULT_JSON_PATH"] = path
+        vault._backend = None
+
+        assert vault.ensure_secret("api_key", "my-provided-key") == "my-provided-key"
+        assert vault.ensure_secret("api_key") == "my-provided-key"
+    os.environ.pop("VAULT_PROVIDER", None)
+    os.environ.pop("VAULT_JSON_PATH", None)
+    vault._backend = None
+
+
+def test_ensure_secret_invalid_name():
+    with pytest.raises(ValueError, match="Invalid secret name"):
+        vault.ensure_secret("_invalid")
+
+
+def test_unsupported_provider_raises():
+    os.environ["VAULT_PROVIDER"] = "consul"
+    vault._backend = None
+    try:
+        with pytest.raises(ValueError, match="Unsupported VAULT_PROVIDER"):
+            vault.get_secret("anything")
+    finally:
+        os.environ.pop("VAULT_PROVIDER", None)
+        vault._backend = None

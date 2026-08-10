@@ -4,6 +4,12 @@ __pycache__/
 .venv
 data/
 .coverage
+coverage.xml
 server.log
 server_error.log
+apcs_tokens.json
+
+# Stale nested repositories (accidentally committed as gitlinks)
+Kestrel-SGR/
+Kestrel-SGR-repo/
 

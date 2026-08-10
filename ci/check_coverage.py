@@ -9,6 +9,12 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# Make emoji output safe on Windows consoles (cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 COVERAGE_XML = Path('coverage.xml')
 FAIL = False
 
