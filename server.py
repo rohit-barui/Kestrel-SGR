@@ -346,6 +346,20 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             contains_pii = redacted != text
             self._send_json({"contains_pii": contains_pii, "redacted": redacted})
             return
+        if path == "/api/action":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            from core.remediation import get_active_adapter
+            success = get_active_adapter().execute(body.get("action", ""), body.get("target", ""), body.get("context", {}))
+            self._send_json({"status": "executed" if success else "failed"})
+            return
+        if path == "/api/analytics/quality":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            # Mark False Positive in the DB or feed to ML
+            logger.info(f"Marked scan {body.get('scan_id')} as False Positive")
+            self._send_json({"status": "feedback_recorded"})
+            return
         self._send_json({"error": "Not found"}, 404)
 
     def do_PUT(self):
@@ -388,14 +402,22 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             vault_path = os.getenv("VAULT_JSON_PATH", "data/secrets.json")
             # Ensure directory exists
             os.makedirs(os.path.dirname(vault_path), exist_ok=True)
+            try:
+                with open(vault_path, "r") as f:
+                    existing_config = json.load(f)
+            except FileNotFoundError:
+                existing_config = {}
+            existing_config.update(config)
             with open(vault_path, "w") as f:
-                json.dump(config, f, indent=2)
+                json.dump(existing_config, f, indent=2)
             self._send_json({"status": "updated"})
             return
+        if path == "/api/notifications/config":
             if not self._check_role("Admin"):
                 return
             body_bytes = self._read_body()
             body = json.loads(body_bytes) if body_bytes else {}
+            config_path = os.environ.get("APCS_NOTIFY_CONFIG", "notify_config.json")
             with open(config_path, "w") as f:
                 json.dump(body, f)
             from core.notifications import notifier
@@ -431,8 +453,9 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 
     def _check_auth(self) -> bool:
         # Skip auth for static files, login endpoint, and health/metrics
-        path = urlparse(self.path).path
-        if path in ("/api/health", "/api/metrics", "/api/auth/login", "/") or path.startswith("/api/auth/"):
+        parsed_path = self.path.split("?")
+        path = parsed_path[0]
+        if path in ("/api/health", "/api/metrics", "/api/auth/login", "/", "/index.html", "/style.css", "/app.js", "/favicon.ico") or path.startswith("/api/auth/"):
             return True
 
         # Allow if no tokens configured (dev mode)
@@ -440,8 +463,16 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             return True
 
         auth_header = self.headers.get("Authorization", "")
+        token = ""
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
+        elif len(parsed_path) > 1:
+            qs = parsed_path[1]
+            for param in qs.split("&"):
+                if param.startswith("token="):
+                    token = param[6:]
+
+        if token:
             # Reload token file to catch newly added tokens during runtime
             auth_manager._load()
             info = auth_manager.validate_token(token)
@@ -525,6 +556,21 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": err}, 400)
             return
         scan_id = uuid.uuid4().hex[:8]
+        
+        from core.privacy import redact_pii
+        override_pii = body.get("override_pii", False)
+        for key in ("email", "sms", "voice"):
+            if key in body and isinstance(body[key], str):
+                redacted = redact_pii(body[key])
+                if redacted != body[key]:
+                    if override_pii:
+                        logger.warning("USER_BYPASSED_PII_WARNING")
+                        from core.notifications import notifier
+                        notifier.alert(scan_id, 100, "PII_OVERRIDE", [f"User bypassed PII warning for {key}"], {})
+                    else:
+                        body[key] = redacted
+                        body["_pii_redacted"] = True
+
         broadcast("scan_start", {"scan_id": scan_id})
         gateway = Gateway()
         def on_done(name, result):
@@ -571,8 +617,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             drift_status = drift_tracker.stats("remediation_rule")
             broadcast("drift_status", {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status})
 
-            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance})
-            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None)})
+            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "pii_redacted": body.get("_pii_redacted", False)})
+            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None), "pii_redacted": body.get("_pii_redacted", False)})
         except Exception as e:
             broadcast("run_error", {"scan_id": scan_id, "error": str(e)})
             self._send_json({"scan_id": scan_id, "error": str(e)}, 500)
@@ -595,6 +641,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 content = f.read()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store, must-revalidate")
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)

@@ -3,108 +3,111 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>APCS Cockpit</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<title>Kestrel-SGR | Advanced SOC Platform</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="app">
-  <div id="loginOverlay" class="login-overlay" style="display:none;">
-    <div class="login-panel">
-      <h2>APCS Login</h2>
-      <p>Enter your API token to access the dashboard.</p>
-      <input type="password" id="tokenInput" placeholder="Paste your API token" />
-      <button id="loginBtn">Login</button>
-      <p id="loginError" style="color: var(--accent-rose); display:none;">Invalid token</p>
+  <!-- Login Modal -->
+  <div id="loginOverlay" class="overlay" style="display:none;">
+    <div class="modal-panel">
+      <h2>System Access</h2>
+      <p>Enter your authorization token to access the Kestrel-SGR SOC platform.</p>
+      <input type="password" id="tokenInput" placeholder="Authentication Token" style="width: 100%; margin-bottom: 16px;" />
+      <button id="loginBtn" class="btn-primary" style="width: 100%;">Authenticate</button>
+      <p id="loginError" style="color: var(--accent-rose); display:none; margin-top: 12px; font-size: 12px;">Access Denied: Invalid Token</p>
     </div>
   </div>
-  <div id="piiOverlay" class="pii-overlay" style="display:none;">
-    <div class="pii-modal">
-      <h3>&#9888; PII Detected</h3>
-      <p>The input appears to contain personally identifiable information (PII). Proceeding may expose sensitive data.</p>
+
+  <!-- PII Warning Modal -->
+  <div id="piiOverlay" class="overlay" style="display:none;">
+    <div class="modal-panel pii-modal">
+      <h3>&#9888; Restricted Data Detected</h3>
+      <p>The payload contains Personally Identifiable Information (PII). Bypassing redaction will trigger an immediate SIEM log and notify the Admin Distribution List.</p>
       <div class="modal-actions">
-        <button class="btn-cancel" id="piiCancel">Cancel</button>
-        <button class="btn-proceed" id="piiProceed">Proceed Anyway</button>
+        <button class="btn-cancel" id="piiCancel">Abort</button>
+        <button class="btn-proceed" id="piiProceed">Bypass Redaction</button>
       </div>
     </div>
   </div>
+
   <header>
     <div class="logo">
-      <span class="logo-icon">&#9889;</span>
-      <h1>APCS Cockpit</h1>
+      <span class="logo-icon">&#128376;</span>
+      <h1>KESTREL-SGR</h1>
     </div>
-    <div class="status-badge" id="statusBadge">Idle</div>
+    <div class="status-badge" id="statusBadge">System Idle</div>
   </header>
 
-  <main>
-    <aside class="panel control-panel">
-      <h2>Controls</h2>
+  <nav class="tabs">
+    <button class="tab-btn active" data-target="tab-dashboard">Dashboard</button>
+    <button class="tab-btn" data-target="tab-forensics">Forensics & Analytics</button>
+    <button class="tab-btn" data-target="tab-settings">Settings & Integrations</button>
+  </nav>
+
+  <!-- TAB: DASHBOARD -->
+  <main id="tab-dashboard" class="tab-content active">
+    <aside class="panel">
+      <h2>Ingestion</h2>
       <div class="control-group">
-        <label for="scenarioSelect">Scenario</label>
+        <label for="scenarioSelect">Simulate Scenario</label>
         <select id="scenarioSelect">
           <option value="">-- Select Scenario --</option>
         </select>
       </div>
-      <button id="runBtn" disabled>Run</button>
-      <div class="payload-preview">
-        <h3>Payload</h3>
-        <pre id="payloadPreview">{ }</pre>
+      <button id="runBtn" class="btn-primary" disabled>Execute Scan</button>
+      <div style="margin-top: 16px;">
+        <label>Payload Preview</label>
+        <div class="data-block" id="payloadPreview">{ }</div>
       </div>
-      <div class="control-group">
-        <label for="customScanInput">Custom Scan</label>
-        <textarea id="customScanInput" rows="3" placeholder='{"email":"suspicious text..."}'></textarea>
+      <div class="control-group" style="margin-top: 24px;">
+        <label for="customScanInput">Custom Investigation</label>
+        <textarea id="customScanInput" rows="4" placeholder="Paste suspicious email headers and body here..."></textarea>
       </div>
-      <button id="runCustomBtn">Run Custom Scan</button>
+      <button id="runCustomBtn" class="action-btn" style="width: 100%;">Run Custom Scan</button>
     </aside>
 
-    <section class="panel graph-panel">
-      <h2>Skill Graph</h2>
+    <section class="panel">
+      <h2>Skill Execution Graph</h2>
       <div id="graphContainer">
         <svg id="graphSvg"></svg>
       </div>
     </section>
 
-    <aside class="panel metrics-panel">
-      <h2>Metrics</h2>
+    <aside class="panel">
+      <h2>Analysis Results</h2>
       <div class="metric-grid">
         <div class="metric-card">
           <span class="metric-label">Risk Score</span>
           <span class="metric-value" id="riskScore">-</span>
         </div>
         <div class="metric-card">
-          <span class="metric-label">Policy</span>
+          <span class="metric-label">Policy Decision</span>
           <span class="metric-value" id="policyStatus">-</span>
         </div>
         <div class="metric-card">
-          <span class="metric-label">ML Confidence</span>
+          <span class="metric-label">Confidence</span>
           <span class="metric-value" id="mlConfidence">-</span>
         </div>
-        <div class="metric-card">
-          <span class="metric-label">Actions</span>
-          <span class="metric-value" id="actions">-</span>
+      </div>
+
+      <div style="margin-top: 8px; margin-bottom: 16px;">
+        <h2>SOAR Playbooks</h2>
+        <div id="actionsArea">
+          <span style="color: var(--text-dim); font-size: 11px;">Waiting for scan...</span>
         </div>
       </div>
-      <div class="action-log">
-        <h3>Action Log</h3>
-        <div id="logEntries"></div>
-      </div>
-    </aside>
 
-    <aside class="panel replay-panel">
-      <h2>Forensics Replay</h2>
-      <div class="replay-controls">
-        <button id="replayBtn" disabled>Load Replay</button>
-        <button id="prevBtn" disabled>&#9664; Prev</button>
-        <button id="nextBtn" disabled>Next &#9654;</button>
-      </div>
-      <div id="replayStep">No replay data</div>
-      <pre id="replayPayload">{ }</pre>
+      <h2>Execution Log</h2>
+      <div id="logEntries"></div>
     </aside>
+  </main>
 
-    <section class="panel analytics-panel">
-      <h2>Analytics</h2>
-      <div class="analytics-grid">
+  <!-- TAB: FORENSICS & ANALYTICS -->
+  <main id="tab-forensics" class="tab-content">
+    <section class="panel">
+      <h2>Global Telemetry</h2>
+      <div class="metric-grid" style="grid-template-columns: repeat(4, 1fr);">
         <div class="metric-card">
           <span class="metric-label">Total Scans</span>
           <span class="metric-value" id="totalScans">-</span>
@@ -122,41 +125,97 @@
           <span class="metric-value" id="blockRate">-</span>
         </div>
       </div>
-      <div id="trendChart">
-        <svg id="trendSvg" width="100%" height="120"></svg>
+      <div style="margin-top: 24px;">
+        <h2>Risk Trend</h2>
+        <div style="background: rgba(0,0,0,0.3); border-radius: 12px; padding: 16px;">
+          <svg id="trendSvg" width="100%" height="160"></svg>
+        </div>
       </div>
-      <div id="alertHistory">
-        <h3>Recent Alerts</h3>
-        <div id="alertList"></div>
+      <div style="margin-top: 24px;">
+        <h2>Export Controls</h2>
+        <div style="display: flex; gap: 12px;">
+          <button id="exportCsvBtn" class="action-btn">Download CSV</button>
+          <button id="exportReportBtn" class="action-btn">Summary Report</button>
+        </div>
+        <div id="exportOutput" class="data-block" style="display:none; margin-top: 12px; max-height: 150px;"></div>
       </div>
     </section>
 
-    <aside class="panel export-panel">
-      <h2>Export</h2>
-      <div class="export-buttons">
-        <button id="exportCsvBtn">Download CSV</button>
-        <button id="exportReportBtn">Summary Report</button>
+    <aside class="panel">
+      <h2>Trace Replay</h2>
+      <div class="replay-controls">
+        <button id="replayBtn" disabled>Load Latest Trace</button>
+        <button id="prevBtn" disabled>&#9664; Prev</button>
+        <button id="nextBtn" disabled>Next &#9654;</button>
       </div>
-      <pre id="exportOutput" style="display:none;"></pre>
-    </aside>
+      <div id="replayStep" style="margin-bottom: 8px;">No replay data</div>
+      <div id="replayPayload" class="data-block" style="flex: 1;">{ }</div>
+      
+      <div style="margin-top: 16px;">
+        <h2>Quality Control</h2>
+        <button id="fpBtn" class="action-btn" style="width: 100%; border-color: var(--accent-rose); color: var(--accent-rose);" disabled>Mark as False Positive</button>
+      </div>
 
-    <aside class="panel webhook-panel">
-      <h2>Webhook Tester</h2>
-      <div class="control-group">
-        <label for="webhookEvent">Event Type</label>
-        <select id="webhookEvent">
-          <option value="phishing_report">Phishing Report</option>
-          <option value="siem_alert">SIEM Alert</option>
-        </select>
+      <div style="margin-top: 24px;">
+        <h2>Recent Critical Alerts</h2>
+        <div id="alertList" class="alert-list"></div>
       </div>
-      <div class="control-group">
-        <label for="webhookPayload">Payload</label>
-        <textarea id="webhookPayload" rows="4">{"email": "suspicious email content here", "url": "https://phish.xyz"}</textarea>
-      </div>
-      <button id="sendWebhookBtn">Send Test Webhook</button>
-      <pre id="webhookResult"></pre>
     </aside>
   </main>
+
+  <!-- TAB: SETTINGS & INTEGRATIONS -->
+  <main id="tab-settings" class="tab-content">
+    <div class="panel">
+      <h2>Platform Configuration</h2>
+      <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 24px;">Configure vendor API keys and webhook destinations. Changes here are securely persisted to the encrypted vault. Requires Admin role.</p>
+      
+      <div class="settings-form" id="integrationsForm">
+        <!-- SIEM section -->
+        <div class="settings-section">
+          <h3>SIEM Connectors</h3>
+          <div class="control-group">
+            <label>Splunk HEC Token</label>
+            <input type="password" id="splunkToken" placeholder="xxx-xxx-xxx">
+          </div>
+          <div class="control-group">
+            <label>Splunk URL</label>
+            <input type="text" id="splunkUrl" placeholder="https://splunk.internal:8088">
+          </div>
+          <div class="control-group">
+            <label>Azure Sentinel Workspace ID</label>
+            <input type="text" id="sentinelWorkspace" placeholder="UUID">
+          </div>
+          <div class="control-group">
+            <label>Google SecOps API Key</label>
+            <input type="password" id="secopsKey" placeholder="...">
+          </div>
+        </div>
+
+        <!-- SOAR & Notification Section -->
+        <div class="settings-section">
+          <h3>SOAR & Alerting</h3>
+          <div class="control-group">
+            <label>Admin Notification DL</label>
+            <input type="text" id="adminEmail" placeholder="soc-admins@company.com">
+          </div>
+          <div class="control-group">
+            <label>Slack Webhook URL</label>
+            <input type="password" id="slackWebhook" placeholder="https://hooks.slack.com/...">
+          </div>
+          <div class="control-group">
+            <label>Action Webhook Endpoint</label>
+            <input type="text" id="actionWebhook" placeholder="https://soar.internal/action">
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button id="saveIntegrationsBtn" class="btn-primary">Save Integrations</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast">Settings Saved</div>
 </div>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
