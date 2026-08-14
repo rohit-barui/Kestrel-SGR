@@ -19,6 +19,10 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 - **Vault Config Merge Conflict** – Fixed `/api/integrations` PUT logic that was destructively overwriting the vault's secrets, destroying the internal encryption keys.
 - **Encryption Crash** – Fixed fatal JSON decode error in `core/replay.py` `risk_trend()` method where encrypted data was not decrypted before parsing.
 - **Duplicate Backend Code** – Resolved duplicate HTTP handlers in `server.py` for config PUT endpoints.
+- **Duplicate import** – Removed redundant `from core.notifications import notifier` inside conditional block in `server.py`.
+
+### Housekeeping
+- **Branch cleanup** – Verified all feature branches (`feature/ml-models`, `feature/ui-ml-display`, `feature/phase4-siem-alerting`, `feature/production-hardening-ci`, `task/setup-hard-coded-workflow`, `feature/alerts-export-auth`, `feature/apcs-3-decision`) are fully merged into `main`; stale branches deleted locally and remotely.
 
 
 - **Celery integration** (`core/celery_app.py`, `core/tasks.py`) – Celery app with in-memory broker/backend; `run_skill` task wrapper that resolves skill functions from a global registry.
