@@ -565,7 +565,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 if redacted != body[key]:
                     if override_pii:
                         logger.warning("USER_BYPASSED_PII_WARNING")
-                        from core.notifications import notifier
+
                         notifier.alert(scan_id, 100, "PII_OVERRIDE", [f"User bypassed PII warning for {key}"], {})
                     else:
                         body[key] = redacted
