@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kestrel-SGR | Advanced SOC Platform</title>
+<title>Kestrel-SGR | Advanced SOC Platform | v0.5</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -42,6 +42,8 @@
   <nav class="tabs">
     <button class="tab-btn active" data-target="tab-dashboard">Dashboard</button>
     <button class="tab-btn" data-target="tab-forensics">Forensics & Analytics</button>
+    <button class="tab-btn" data-target="tab-reputation">Reputation & OWASP</button>
+    <button class="tab-btn" data-target="tab-phishing">Phishing Reports</button>
     <button class="tab-btn" data-target="tab-settings">Settings & Integrations</button>
   </nav>
 
@@ -123,6 +125,13 @@
         </div>
       </div>
 
+      <div style="margin-top: 8px; margin-bottom: 16px;">
+        <h2>Enrichment Summary</h2>
+        <div id="enrichmentArea">
+          <span style="color: var(--text-dim); font-size: 11px;">Waiting for scan results...</span>
+        </div>
+      </div>
+
       <h2>Execution Log</h2>
       <div id="logEntries"></div>
     </aside>
@@ -156,14 +165,6 @@
           <svg id="trendSvg" width="100%" height="160"></svg>
         </div>
       </div>
-      <div style="margin-top: 24px;">
-        <h2>Export Controls</h2>
-        <div style="display: flex; gap: 12px;">
-          <button id="exportCsvBtn" class="action-btn">Download CSV</button>
-          <button id="exportReportBtn" class="action-btn">Summary Report</button>
-        </div>
-        <div id="exportOutput" class="data-block" style="display:none; margin-top: 12px; max-height: 150px;"></div>
-      </div>
     </section>
 
     <aside class="panel">
@@ -185,7 +186,81 @@
         <h2>Recent Critical Alerts</h2>
         <div id="alertList" class="alert-list"></div>
       </div>
+
+      <div style="margin-top: 24px;">
+        <h2>Export Controls</h2>
+        <div style="display: flex; gap: 12px;">
+          <button id="exportCsvBtn" class="action-btn">Download CSV</button>
+          <button id="exportReportBtn" class="action-btn">Summary Report</button>
+        </div>
+        <div id="exportOutput" class="data-block" style="display:none; margin-top: 12px; max-height: 150px;"></div>
+      </div>
     </aside>
+  </main>
+
+  <!-- TAB: REPUTATION & OWASP -->
+  <main id="tab-reputation" class="tab-content">
+    <div class="panel" style="grid-column: 1;">
+      <h2>IP Reputation Lookup</h2>
+      <div class="control-group">
+        <label for="ipRepInput">IP Addresses (comma-separated)</label>
+        <input type="text" id="ipRepInput" placeholder="8.8.8.8, 1.1.1.1">
+      </div>
+      <button id="ipRepBtn" class="action-btn" style="width: 100%;">Check IP Reputation</button>
+      <div id="ipRepResults" style="margin-top: 16px;"></div>
+    </div>
+
+    <div class="panel" style="grid-column: 2;">
+      <h2>File Hash Reputation</h2>
+      <div class="control-group">
+        <label for="fileHashInput">SHA-256 Hash</label>
+        <input type="text" id="fileHashInput" placeholder="Enter SHA-256 hash...">
+      </div>
+      <button id="fileRepBtn" class="action-btn" style="width: 100%;">Check File Reputation</button>
+      <div id="fileRepResults" style="margin-top: 16px;"></div>
+    </div>
+
+    <div class="panel" style="grid-column: 1 / span 2;">
+      <h2>OWASP Security Scan</h2>
+      <div class="control-group">
+        <label for="owaspUrlInput">URL to Scan</label>
+        <input type="text" id="owaspUrlInput" placeholder="https://suspicious-site.xyz/page?q=<script>...">
+      </div>
+      <div class="control-group">
+        <label for="owaspContentInput">Content to Scan</label>
+        <textarea id="owaspContentInput" rows="3" placeholder="Paste content to analyze for OWASP patterns..."></textarea>
+      </div>
+      <button id="owaspScanBtn" class="action-btn" style="width: 100%;">Run OWASP Scan</button>
+      <div id="owaspResults" style="margin-top: 16px;"></div>
+    </div>
+  </main>
+
+  <!-- TAB: PHISHING REPORTS -->
+  <main id="tab-phishing" class="tab-content">
+    <div class="panel" style="grid-column: 1 / span 2;">
+      <h2>Submit Customer Phishing Report</h2>
+      <div class="control-group">
+        <label for="phishReportEmail">Forwarded Email Content</label>
+        <textarea id="phishReportEmail" rows="6" placeholder="Paste the full forwarded email (headers + body) reported by the customer..."></textarea>
+      </div>
+      <div class="control-group">
+        <label for="phishReporter">Reporter (optional)</label>
+        <input type="text" id="phishReporter" placeholder="user@company.com">
+      </div>
+      <div class="control-group" style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="phishAutoRemediate" style="width: auto;">
+        <label for="phishAutoRemediate" style="margin: 0;">Auto-remediate (block sender, quarantine)</label>
+      </div>
+      <button id="phishReportBtn" class="btn-primary" style="width: 100%;">Validate & Respond</button>
+      <div id="phishResults" style="margin-top: 16px;"></div>
+    </div>
+
+    <div class="panel" style="grid-column: 1 / span 2;">
+      <h2>Recent Phishing Report History</h2>
+      <div id="phishHistory">
+        <span style="color: var(--text-dim); font-size: 11px;">No reports yet. Submit a report above.</span>
+      </div>
+    </div>
   </main>
 
   <!-- TAB: SETTINGS & INTEGRATIONS -->
@@ -213,6 +288,48 @@
           <div class="control-group">
             <label>Google SecOps API Key</label>
             <input type="password" id="secopsKey" placeholder="...">
+          </div>
+        </div>
+
+        <!-- Threat Intelligence Section -->
+        <div class="settings-section">
+          <h3>Threat Intelligence Providers</h3>
+          <div class="control-group">
+            <label>VirusTotal API Key</label>
+            <input type="password" id="vtApiKey" placeholder="VT_API_KEY">
+          </div>
+          <div class="control-group">
+            <label>AbuseIPDB API Key</label>
+            <input type="password" id="abuseipdbKey" placeholder="ABUSEIPDB_API_KEY">
+          </div>
+          <div class="control-group">
+            <label>AlienVault OTX API Key</label>
+            <input type="password" id="otxApiKey" placeholder="OTX_API_KEY">
+          </div>
+        </div>
+
+        <!-- Direct Email Security Integrations -->
+        <div class="settings-section">
+          <h3>Email Security Integrations</h3>
+          <div class="control-group">
+            <label>Microsoft Defender for Email - Tenant ID</label>
+            <input type="text" id="defenderTenantId" placeholder="tenant-id">
+          </div>
+          <div class="control-group">
+            <label>Microsoft Defender for Email - Client ID</label>
+            <input type="text" id="defenderClientId" placeholder="client-id">
+          </div>
+          <div class="control-group">
+            <label>Microsoft Defender for Email - Client Secret</label>
+            <input type="password" id="defenderClientSecret" placeholder="client-secret">
+          </div>
+          <div class="control-group">
+            <label>Cisco ESA Host</label>
+            <input type="text" id="ciscoEsaHost" placeholder="https://esa.corp.local">
+          </div>
+          <div class="control-group">
+            <label>Cisco ESA API Key</label>
+            <input type="password" id="ciscoEsaKey" placeholder="api-key">
           </div>
         </div>
 

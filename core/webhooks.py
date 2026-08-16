@@ -19,6 +19,7 @@ class WebhookHandler:
     def _register_defaults(self):
         self.register("phishing_report", self._handle_phishing_report)
         self.register("siem_alert", self._handle_siem_alert)
+        self.register("customer_report", self._handle_customer_report)
 
     def register(self, event_type: str, handler: Callable):
         self._handlers[event_type] = handler
@@ -49,5 +50,17 @@ class WebhookHandler:
         message = payload.get("message", "")
         source_ip = payload.get("source_ip", "unknown")
         return {"status": "accepted", "scan_payload": {"email": f"SIEM alert from {source_ip}: {message}"}}
+
+    def _handle_customer_report(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        email = payload.get("email", "")
+        reporter = payload.get("reporter", "unknown")
+        message_id = payload.get("message_id", "")
+        auto_remediate = payload.get("auto_remediate", False)
+        if not email and not message_id:
+            return {"status": "error", "message": "No email content or message_id provided"}
+        scan_payload = {"email": email, "_report": True, "_reporter": reporter}
+        if message_id:
+            scan_payload["_message_id"] = message_id
+        return {"status": "accepted", "scan_payload": scan_payload, "auto_remediate": auto_remediate}
 
 webhook_handler = WebhookHandler()

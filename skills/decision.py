@@ -151,6 +151,11 @@ def aggregate_risk(perception_payload: Dict[str, Any]) -> Dict[str, Any]:
     ml = perception_payload.get("ml_score", {})
     entities = perception_payload.get("extract_entities", {})
     enrich = perception_payload.get("enrich_external", {})
+    ip_rep = perception_payload.get("check_ip_reputation", {})
+    file_rep = perception_payload.get("check_file_reputation", {})
+    owasp = perception_payload.get("owasp_analysis", {})
+    phishing_val = perception_payload.get("phishing_validation", {})
+    threat_intel = perception_payload.get("threat_intel_lookup", {})
 
     score = 0
 
@@ -203,6 +208,41 @@ def aggregate_risk(perception_payload: Dict[str, Any]) -> Dict[str, Any]:
     for entry in enrich.get("url_analysis", []):
         score += entry.get("suspicion_score", 0) // 4
 
+    # IP reputation signals
+    for domain, ip_info in ip_rep.get("ip_reputation", {}).items():
+        if ip_info.get("malicious"):
+            score += 25
+        for check_name, check_result in ip_info.get("checks", {}).items():
+            if check_result.get("reputation") == "suspicious":
+                score += 15
+                break
+
+    # File reputation signals
+    file_rep_data = file_rep.get("file_reputation", {})
+    if file_rep_data.get("malicious"):
+        score += 35
+    if file_rep.get("suspicious_count", 0) > 0:
+        score += 20
+
+    # OWASP findings
+    owasp_risk = owasp.get("risk_score", 0)
+    if owasp_risk:
+        score += owasp_risk // 2
+
+    # Phishing validation signals
+    phish_signals = phishing_val.get("phishing_signals", {})
+    if phish_signals.get("brand_impersonation"):
+        score += 30
+    if phish_signals.get("missing_ssl"):
+        score += 10
+    if phish_signals.get("header_mismatch"):
+        score += 15
+
+    # Threat intelligence IoC matches
+    ioc_count = len(threat_intel.get("threat_intel", []))
+    if ioc_count:
+        score += 30 * ioc_count
+
     risk_score = min(score, 100)
     return {"output": {"risk_score": risk_score}, "confidence": _default_confidence()}
 
@@ -212,6 +252,10 @@ def apply_veto(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
     spf = decision_payload.get("validate_spf_dkim", {})
     detonation = decision_payload.get("detonate_urls", {}).get("detonation", {})
     ml = decision_payload.get("ml_score", {})
+    ip_rep = decision_payload.get("check_ip_reputation", {})
+    file_rep = decision_payload.get("check_file_reputation", {})
+    threat_intel = decision_payload.get("threat_intel_lookup", {})
+    phishing_val = decision_payload.get("phishing_validation", {})
 
     overridden = False
 
@@ -224,6 +268,24 @@ def apply_veto(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
         overridden = True
     if ml.get("ml_risk_score", 0) >= 80:
         risk = max(risk, 80)
+        overridden = True
+
+    # New veto conditions
+    for domain, ip_info in ip_rep.get("ip_reputation", {}).items():
+        if ip_info.get("malicious"):
+            risk = max(risk, 80)
+            overridden = True
+            break
+    file_rep_data = file_rep.get("file_reputation", {})
+    if file_rep_data.get("malicious"):
+        risk = max(risk, 85)
+        overridden = True
+    ioc_count = len(threat_intel.get("threat_intel", []))
+    if ioc_count >= 2:
+        risk = max(risk, 85)
+        overridden = True
+    if phishing_val.get("phishing_likely"):
+        risk = max(risk, 75)
         overridden = True
 
     confidence = 95 if overridden else (100 if risk >= 70 else 50)

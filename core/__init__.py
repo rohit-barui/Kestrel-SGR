@@ -6,3 +6,4 @@ from core.reasoning import combine
 from core.replay import ReplayStore
 from core.drift import DriftTracker
 from core.red_team import generate_ceo_fraud, generate_credential_harvester, generate_malware_drop
+from core.integrations import DefenderForEmail, CiscoESA, VirusTotal, AbuseIPDB, AlienVaultOTX

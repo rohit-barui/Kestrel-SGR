@@ -32,6 +32,10 @@ from skills.dominance import (
     deploy_honey_credentials, rewrite_links, containment_actions,
     block_ip, quarantine_email, trigger_mfa_reset
 )
+from skills.reputation import (
+    check_ip_reputation, check_file_reputation, threat_intel_lookup, phishing_validation
+)
+from skills.owasp import owasp_analysis
 from core.detonation import detonation_skill, detonate_urls
 
 os.makedirs("data", exist_ok=True)
@@ -95,8 +99,14 @@ def build_graph(gateway, on_node_done=None):
         SkillNode(name="enrich_external", func=_wrap(enrich_external, "enrich_external", on_node_done), deps=["extract_urls"]),
         SkillNode(name="validate_spf_dkim", func=_wrap(validate_spf_dkim, "validate_spf_dkim", on_node_done), deps=["ingest"]),
         SkillNode(name="detonate_urls", func=_wrap(detonation_skill, "detonate_urls", on_node_done), deps=["extract_urls"]),
-        SkillNode(name="ml_score", func=_wrap(ml_score, "ml_score", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "extract_entities", "enrich_external", "detonate_urls", "validate_spf_dkim"]),
-        SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "detonate_urls"]),
+        # New v0.5 perception nodes
+        SkillNode(name="check_ip_reputation", func=_wrap(check_ip_reputation, "check_ip_reputation", on_node_done), deps=["extract_urls"]),
+        SkillNode(name="check_file_reputation", func=_wrap(check_file_reputation, "check_file_reputation", on_node_done), deps=["ingest"]),
+        SkillNode(name="threat_intel_lookup", func=_wrap(threat_intel_lookup, "threat_intel_lookup", on_node_done), deps=["extract_urls"]),
+        SkillNode(name="owasp_analysis", func=_wrap(owasp_analysis, "owasp_analysis", on_node_done), deps=["extract_urls", "ingest"]),
+        SkillNode(name="phishing_validation", func=_wrap(phishing_validation, "phishing_validation", on_node_done), deps=["ingest", "extract_urls", "validate_spf_dkim"]),
+        SkillNode(name="ml_score", func=_wrap(ml_score, "ml_score", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "extract_entities", "enrich_external", "detonate_urls", "validate_spf_dkim", "check_ip_reputation", "check_file_reputation", "threat_intel_lookup", "owasp_analysis", "phishing_validation"]),
+        SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "detonate_urls", "check_ip_reputation", "check_file_reputation", "threat_intel_lookup", "owasp_analysis", "phishing_validation"]),
         SkillNode(name="apply_veto", func=_wrap(apply_veto, "apply_veto", on_node_done), deps=["aggregate_risk"]),
         SkillNode(name="recommend_actions", func=_wrap(recommend_actions, "recommend_actions", on_node_done), deps=["apply_veto"]),
         SkillNode(name="deploy_honey_credentials", func=_wrap(deploy_honey_credentials, "deploy_honey_credentials", on_node_done), deps=["recommend_actions", "apply_veto"]),
@@ -247,7 +257,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/health":
             self._send_json({
                 "status": "ok",
-                "version": "0.4.0",
+                "version": "0.5.0",
                 "uptime": time.time() - start_time,
                 "scans_processed": scan_count,
                 "policies_loaded": len(policy_engine.rules) if hasattr(policy_engine, 'rules') else 0,
@@ -392,6 +402,89 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 return
             scan_body = {"email": text, "_filename": filename}
             self._run_scan(scan_body)
+            return
+        if path == "/api/report/phishing":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            email_content = body.get("email", "")
+            message_id = body.get("message_id", "")
+            reporter = body.get("reporter", "")
+            auto_remediate = body.get("auto_remediate", False)
+
+            if not email_content and not message_id:
+                self._send_json({"error": "Provide 'email' content or 'message_id'"}, 400)
+                return
+
+            scan_payload = {"email": email_content, "_report": True, "_reporter": reporter}
+            if message_id:
+                scan_payload["_message_id"] = message_id
+
+            self._run_scan(scan_payload)
+
+            # Optionally trigger integrated remediation
+            if auto_remediate and hasattr(self, '_auth_info'):
+                logger.info("Auto-remediate requested for phishing report from %s", reporter)
+
+            return
+        if path == "/api/reputation/ip":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            ips = body.get("ips", [])
+            if not ips:
+                self._send_json({"error": "Provide 'ips' list"}, 400)
+                return
+            from skills.reputation import check_ip_reputation
+            result = check_ip_reputation({"extract_urls": {"domains": ips}})
+            self._send_json(result.get("output", {}))
+            return
+        if path == "/api/reputation/file":
+            body_bytes = self._read_body()
+            content_type = self.headers.get("Content-Type", "")
+            file_hash = None
+            if "multipart/form-data" in content_type:
+                boundary = content_type.split("boundary=")[-1].strip()
+                marker = ("--" + boundary).encode()
+                parts = body_bytes.split(marker)
+                for part in parts:
+                    hdr_end = part.find(b"\r\n\r\n")
+                    if hdr_end == -1:
+                        continue
+                    hdr_text = part[:hdr_end].decode(errors="replace")
+                    if 'name="file"' in hdr_text:
+                        raw = part[hdr_end + 4:]
+                        for suffix in (b"\r\n--", b"--", b"\r\n"):
+                            if raw.endswith(suffix):
+                                raw = raw[:-len(suffix)]
+                        import hashlib
+                        file_hash = hashlib.sha256(raw).hexdigest()
+                        break
+            else:
+                body = json.loads(body_bytes) if body_bytes else {}
+                file_hash = body.get("hash", "")
+
+            if not file_hash:
+                self._send_json({"error": "Provide file upload or 'hash'"}, 400)
+                return
+            from skills.reputation import check_file_reputation
+            result = check_file_reputation({"ingest": {"content": "", "type": "email"}})
+            result["output"]["file_reputation"]["sha256"] = file_hash
+            self._send_json(result.get("output", {}))
+            return
+        if path == "/api/owasp/scan":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            url_to_scan = body.get("url", "")
+            content = body.get("content", "")
+            if not url_to_scan and not content:
+                self._send_json({"error": "Provide 'url' or 'content'"}, 400)
+                return
+            from skills.owasp import owasp_analysis
+            scan_payload = {"extract_urls": {"urls": [url_to_scan] if url_to_scan else [], "domains": []}, "ingest": {"content": content, "type": "email"}}
+            result = owasp_analysis(scan_payload)
+            self._send_json(result.get("output", {}))
+            return
+        if path == "/api/reports":
+            self._send_json({"reports": replay_store.list_ids(), "total": len(replay_store.list_ids())})
             return
         if path == "/api/action":
             body_bytes = self._read_body()
@@ -648,9 +741,24 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 "quarantined": final_output.get("containment_actions", {}).get("quarantined", False),
                 "mfa_reset": final_output.get("containment_actions", {}).get("mfa_reset", False),
             }
+            enrichment = {
+                "ip_reputation": final_output.get("check_ip_reputation", {}).get("ip_reputation", {}),
+                "file_reputation": final_output.get("check_file_reputation", {}).get("file_reputation", {}),
+                "owasp_findings": final_output.get("owasp_analysis", {}).get("owasp_findings", []),
+                "phishing_signals": final_output.get("phishing_validation", {}).get("phishing_signals", {}),
+                "threat_intel": final_output.get("threat_intel_lookup", {}).get("threat_intel", []),
+            }
             confidence = result["aggregated_confidence"]
             is_allowed = True
             try:
+                ip_rep_malicious = any(
+                    info.get("malicious") for info in final_output.get("check_ip_reputation", {}).get("ip_reputation", {}).values()
+                )
+                file_rep_malicious = final_output.get("check_file_reputation", {}).get("file_reputation", {}).get("malicious", False)
+                ioc_count = len(final_output.get("threat_intel_lookup", {}).get("threat_intel", []))
+                phish_likely = final_output.get("phishing_validation", {}).get("phishing_likely", False)
+                owasp_critical = final_output.get("owasp_analysis", {}).get("by_severity", {}).get("critical", 0)
+
                 is_allowed = policy_engine.evaluate({
                     "risk_score": risk_score,
                     "confidence": confidence,
@@ -665,6 +773,11 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                     "typo_squatting": final_output.get("detect_typo_squatting", {}).get("typo_squatting", []),
                     "spf_result": final_output.get("validate_spf_dkim", {}).get("spf_result", "neutral"),
                     "dmarc_result": final_output.get("validate_spf_dkim", {}).get("dmarc_result", "neutral"),
+                    "ip_reputation_malicious": ip_rep_malicious,
+                    "file_reputation_malicious": file_rep_malicious,
+                    "threat_intel_ioc_count": ioc_count,
+                    "phishing_likely": phish_likely,
+                    "owasp_critical_findings": owasp_critical,
                 })
             except Exception:
                 pass
@@ -686,8 +799,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             drift_status = drift_tracker.stats("remediation_rule")
             broadcast("drift_status", {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status})
 
-            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "pii_redacted": body.get("_pii_redacted", False)})
-            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None), "pii_redacted": body.get("_pii_redacted", False)})
+            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "enrichment": enrichment, "pii_redacted": body.get("_pii_redacted", False)})
+            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "enrichment": enrichment, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None), "pii_redacted": body.get("_pii_redacted", False)})
         except Exception as e:
             broadcast("run_error", {"scan_id": scan_id, "error": str(e)})
             self._send_json({"scan_id": scan_id, "error": str(e)}, 500)
