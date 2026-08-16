@@ -1,0 +1,2 @@
+[console_scripts]
+kestrel-sgr = server:main

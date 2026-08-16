@@ -1,3 +1,26 @@
+Metadata-Version: 2.4
+Name: kestrel-sgr
+Version: 0.4.0
+Summary: Autonomous Phishing Control System — multi-plane security control that detects, analyzes, predicts, and neutralises social-engineering threats
+Author-email: Rohit Barui <rohit@kestrel-sgr.dev>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/rohit-barui/Kestrel-SGR
+Project-URL: Repository, https://github.com/rohit-barui/Kestrel-SGR
+Project-URL: Documentation, https://github.com/rohit-barui/Kestrel-SGR/tree/main/docs
+Project-URL: Changelog, https://github.com/rohit-barui/Kestrel-SGR/blob/main/CHANGELOG.md
+Keywords: phishing,security,soc,detonation,cyberwatch,antiphishing
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Information Technology
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Security
+Classifier: Environment :: Web Environment
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: jsonschema>=4.0.0
+Requires-Dist: cryptography>=42.0.0
+Dynamic: license-file
+
 # Kestrel-SGR (APCS) — Autonomous Phishing Control System
 
 **APCS** is a deterministic, multi‑plane security control system that detects, analyzes, predicts, and actively neutralises social‑engineering threats (phishing, smishing, vishing) across enterprise environments.
@@ -33,16 +56,17 @@ Built on a **Skill Graph Runtime (SGR)** — a Directed Acyclic Graph (DAG) exec
 
 ## Quick Start
 
-```bash
-# Install from PyPI
-pip install kestrel-sgr
-kestrel-sgr
-
-# Or with Docker (after Docker Desktop is running):
-# docker run -p 9090:9090 rohitbarui/kestrel-sgr
-
-# Or one-click install (creates venv, installs deps, starts server):
+```powershell
+# One-click install (creates venv, installs deps, starts server)
 .\Kestrel-sgr.ps1
+
+# Or manually:
+git clone https://github.com/rohit-barui/Kestrel-SGR.git
+cd Kestrel-SGR
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python server.py
 ```
 
 Open **http://localhost:9090** and enter the default Analyst token:

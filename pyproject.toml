@@ -1,6 +1,45 @@
 [build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.backends._legacy:_Backend"
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kestrel-sgr"
+version = "0.4.0"
+description = "Autonomous Phishing Control System — multi-plane security control that detects, analyzes, predicts, and neutralises social-engineering threats"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    {name = "Rohit Barui", email = "rohit@kestrel-sgr.dev"},
+]
+keywords = ["phishing", "security", "soc", "detonation", "cyberwatch", "antiphishing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Security",
+    "Environment :: Web Environment",
+]
+
+dependencies = [
+    "jsonschema>=4.0.0",
+    "cryptography>=42.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rohit-barui/Kestrel-SGR"
+Repository = "https://github.com/rohit-barui/Kestrel-SGR"
+Documentation = "https://github.com/rohit-barui/Kestrel-SGR/tree/main/docs"
+Changelog = "https://github.com/rohit-barui/Kestrel-SGR/blob/main/CHANGELOG.md"
+
+[project.scripts]
+kestrel-sgr = "server:main"
+
+[tool.setuptools.packages.find]
+include = ["core*", "skills*", "policies*", "web*", "config*", "scripts*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.rego", "*.html", "*.css", "*.js", "*.json", "*.py"]
 
 [tool.ruff]
 target-version = "py311"

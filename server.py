@@ -731,7 +731,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="APCS Server")
     parser.add_argument("--port", type=int, default=PORT, help="Port to bind")
     parser.add_argument("--cert", help="Path to SSL certificate file")
@@ -750,7 +750,6 @@ if __name__ == "__main__":
     if args.cert and args.key:
         ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         ssl_ctx.load_cert_chain(certfile=args.cert, keyfile=args.key)
-        # Optionally require client certificate
         if hasattr(args, 'client_ca') and args.client_ca:
             ssl_ctx.load_verify_locations(cafile=args.client_ca)
             ssl_ctx.verify_mode = ssl.CERT_REQUIRED
@@ -767,3 +766,6 @@ if __name__ == "__main__":
         server.serve_forever()
     except KeyboardInterrupt:
         server.shutdown()
+
+if __name__ == "__main__":
+    main()
