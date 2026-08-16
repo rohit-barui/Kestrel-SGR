@@ -5,9 +5,11 @@
 Built on a **Skill Graph Runtime (SGR)** — a Directed Acyclic Graph (DAG) executor that chains perception, decision, and dominance skills with schema validation, confidence aggregation, and saga-based rollback.
 
 <p align="center">
-  <a href="https://github.com/rohit-barui/Kestrel-SGR/releases/download/v0.4.0/Kestrel-SGR.mp4">
-    <img src="https://img.shields.io/badge/▶-Watch%20Demo-22D3EE?style=for-the-badge" alt="Watch Demo">
+  <a href="https://youtu.be/wF07MUFRXrQ">
+    <img src="https://img.youtube.com/vi/wF07MUFRXrQ/0.jpg" alt="Kestrel-SGR Demo" width="600" style="border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
   </a>
+  <br>
+  <em>Watch the Kestrel-SGR demo on YouTube</em>
 </p>
 
 ---
