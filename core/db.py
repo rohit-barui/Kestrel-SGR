@@ -1,8 +1,7 @@
 import os
 import sqlite3
-from typing import Optional
 
-from .vault import get_secret, ensure_secret
+from .vault import ensure_secret, get_secret
 
 
 def get_encrypted_conn(path: str, key_name: str = "db_encryption_key") -> sqlite3.Connection:

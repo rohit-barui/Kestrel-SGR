@@ -1,12 +1,7 @@
 """Tests for structured JSON logging (core/logging.py)."""
-import io
 import json
 import logging
 import sys
-from contextlib import redirect_stdout
-from unittest.mock import patch
-
-import pytest
 
 from core.logging import JSONFormatter, setup_logging
 

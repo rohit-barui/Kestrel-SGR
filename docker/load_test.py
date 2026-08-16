@@ -1,8 +1,8 @@
+import os
 import threading
 import time
-import json
+
 import requests
-import os
 
 TARGET = os.getenv('TARGET_URL', 'http://localhost:9090')
 NUM_REQUESTS = int(os.getenv('NUM_REQUESTS', '100'))
@@ -30,7 +30,7 @@ def worker():
             r = requests.post(f"{TARGET}/api/scan", json=payload, timeout=10)
             elapsed = time.time() - start
             results.append((r.status_code, elapsed))
-        except Exception as e:
+        except Exception:
             results.append((None, time.time() - start))
         if len(results) >= NUM_REQUESTS:
             break

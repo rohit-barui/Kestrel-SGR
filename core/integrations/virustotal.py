@@ -1,19 +1,19 @@
+import hashlib
 import json
 import logging
-import hashlib
 import os
+from typing import Any
 from urllib.request import Request, urlopen
-from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("apcs")
 
 class VirusTotal:
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.api_key = self.config.get("api_key", os.environ.get("VT_API_KEY", ""))
         self.base = "https://www.virustotal.com/api/v3"
 
-    def _get(self, path: str) -> Optional[Dict]:
+    def _get(self, path: str) -> dict | None:
         if not self.api_key:
             return None
         try:
@@ -27,7 +27,7 @@ class VirusTotal:
             logger.debug("VirusTotal API error: %s", e)
             return None
 
-    def check_ip(self, ip: str) -> Dict[str, Any]:
+    def check_ip(self, ip: str) -> dict[str, Any]:
         result = self._get(f"/ip_addresses/{ip}")
         if not result:
             return {"ip": ip, "reputation": "unknown", "score": 0, "source": "vt"}
@@ -50,7 +50,7 @@ class VirusTotal:
             "source": "vt",
         }
 
-    def check_url(self, url: str) -> Dict[str, Any]:
+    def check_url(self, url: str) -> dict[str, Any]:
         url_id = hashlib.sha256(url.encode()).hexdigest()
         result = self._get(f"/urls/{url_id}")
         if not result:
@@ -71,7 +71,7 @@ class VirusTotal:
             "source": "vt",
         }
 
-    def check_file_hash(self, file_hash: str) -> Dict[str, Any]:
+    def check_file_hash(self, file_hash: str) -> dict[str, Any]:
         result = self._get(f"/files/{file_hash}")
         if not result:
             return {"hash": file_hash, "reputation": "unknown", "score": 0, "source": "vt"}

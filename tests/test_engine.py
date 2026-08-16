@@ -1,5 +1,6 @@
 import unittest
-from core.engine import SkillNode, SkillGraphRuntime
+
+from core.engine import SkillGraphRuntime, SkillNode
 from core.gateway import Gateway, rollback_noop
 from core.tasks import run_skill
 

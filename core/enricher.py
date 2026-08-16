@@ -5,11 +5,10 @@ timeout, rate-limited) it falls back to the mock implementation.
 """
 
 import socket
-import time
-import json
-from typing import Dict, Any, List, Optional
+from typing import Any
 
-def resolve_dns(domain: str) -> Dict[str, Any]:
+
+def resolve_dns(domain: str) -> dict[str, Any]:
     """Real DNS resolution with fallback."""
     try:
         addrs = socket.getaddrinfo(domain, 80, socket.AF_INET)
@@ -18,7 +17,7 @@ def resolve_dns(domain: str) -> Dict[str, Any]:
     except Exception:
         return {"A": ["93.184.216.34"], "AAAA": ["2606:2800:220:1:248:1893:25c8:1946"], "status": "mock"}
 
-def whois_lookup_real(domain: str) -> Dict[str, Any]:
+def whois_lookup_real(domain: str) -> dict[str, Any]:
     """Real WHOIS lookup via whois python lib (mock fallback if unavailable)."""
     try:
         import whois
@@ -34,7 +33,7 @@ def whois_lookup_real(domain: str) -> Dict[str, Any]:
         fake_date = f"20{int(hashlib.sha1(domain.encode()).hexdigest()[:2], 16) % 30:02d}-01-01"
         return {"domain": domain, "creation_date": fake_date, "registrar": "MockRegistrar", "status": "mock"}
 
-def analyze_suspicious_urls(urls: List[str]) -> List[Dict[str, Any]]:
+def analyze_suspicious_urls(urls: list[str]) -> list[dict[str, Any]]:
     """Analyze URLs for suspicious characteristics."""
     import re
     results = []

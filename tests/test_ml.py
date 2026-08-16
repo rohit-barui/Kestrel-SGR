@@ -2,9 +2,6 @@
 import math
 import os
 import pickle
-from unittest.mock import patch
-
-import pytest
 
 from core import ml
 from core.ml import MLScorer, PhishingFeatureExtractor, ml_score
@@ -147,7 +144,7 @@ class TestMLScorerModelPath:
     def test_score_uses_model_when_present(self, tmp_path):
         scorer = MLScorer()
         class FakeModel:
-            def predict_proba(self, X):
+            def predict_proba(self, x):
                 return [[0.2, 0.8]]
         scorer.model = FakeModel()
         result = scorer.score(SAMPLE_PAYLOAD)
@@ -196,10 +193,10 @@ class TestMLScorerModelPath:
 
     def test_synthetic_dataset_shapes(self):
         scorer = MLScorer()
-        X, y = scorer._synthetic_dataset()
-        assert len(X) == 3
+        x, y = scorer._synthetic_dataset()
+        assert len(x) == 3
         assert len(y) == 3
-        assert all(len(row) == 11 for row in X)
+        assert all(len(row) == 11 for row in x)
         assert y == [0, 1, 0]
 
     def test_train_and_save_accuracy_fallback(self, monkeypatch, tmp_path):
@@ -207,7 +204,6 @@ class TestMLScorerModelPath:
         monkeypatch.setattr(ml, "MODEL_PATH", str(tmp_path / "bad.pkl"))
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
         scorer = MLScorer()
-        orig_train = scorer._train_and_save
 
         def bad_train():
             scorer.model = None

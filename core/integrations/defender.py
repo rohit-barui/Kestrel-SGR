@@ -1,19 +1,18 @@
 import json
 import logging
+from typing import Any
 from urllib.request import Request, urlopen
-from urllib.error import URLError
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger("apcs")
 
 class DefenderForEmail:
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.tenant_id = self.config.get("tenant_id", "")
         self.client_id = self.config.get("client_id", "")
         self.client_secret = self.config.get("client_secret", "")
 
-    def _get_access_token(self) -> Optional[str]:
+    def _get_access_token(self) -> str | None:
         if not all([self.tenant_id, self.client_id, self.client_secret]):
             logger.warning("Defender: missing credentials")
             return None
@@ -84,7 +83,7 @@ class DefenderForEmail:
             logger.error("Defender block sender failed: %s", e)
             return self._mock("block_sender", sender)
 
-    def get_email_verdict(self, message_id: str) -> Dict[str, Any]:
+    def get_email_verdict(self, message_id: str) -> dict[str, Any]:
         token = self._get_access_token()
         if not token:
             return {"verdict": "unknown", "source": "mock"}

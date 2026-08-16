@@ -1,9 +1,9 @@
-from typing import Dict
+
 
 class DriftTracker:
     def __init__(self, max_fp_rate: float = 0.05):
         self.max_fp_rate = max_fp_rate
-        self._stats: Dict[str, Dict[str, int]] = {}
+        self._stats: dict[str, dict[str, int]] = {}
 
     def _ensure(self, rule: str):
         if rule not in self._stats:
@@ -44,5 +44,5 @@ class DriftTracker:
         rate = self.fp_rate(rule)
         return base_weight * (1.0 - min(rate, 0.5))
 
-    def stats(self, rule: str) -> Dict[str, int]:
+    def stats(self, rule: str) -> dict[str, int]:
         return self._stats.get(rule, {})

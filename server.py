@@ -1,42 +1,60 @@
-import json, http.server, socketserver, os, sys, threading, time, uuid, io, ssl, argparse, logging, hmac, hashlib
-from urllib.parse import urlparse
+import argparse
+import hashlib
+import hmac
+import http.server
+import json
+import logging
+import os
+import socketserver
+import ssl
+import sys
+import threading
+import time
+import uuid
 from collections import defaultdict
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("apcs")
 
-from core.engine import SkillNode, SkillGraphRuntime
-from core.gateway import Gateway
-from core.policy import SimpleRegoEngine
-from core.replay import ReplayStore
-from core.export import export_csv, generate_summary_report
-from core.notifications import notifier
-from core.drift import DriftTracker
+from config.constants import EXAMPLE_URLS
 from core.auth import auth_manager
-from core.webhooks import webhook_handler
+from core.detonation import detonate_urls, detonation_skill
+from core.drift import DriftTracker
+from core.engine import SkillGraphRuntime, SkillNode
+from core.export import export_csv, generate_summary_report
+from core.gateway import Gateway
 from core.logging import setup_logging
 from core.ml import ml_score
-from config.constants import EXAMPLE_URLS
+from core.notifications import notifier
+from core.policy import SimpleRegoEngine
 from core.red_team import generate_all as generate_red_team_payloads
-from skills.perception import (
-    ingest_payload, extract_urls, scan_qr_codes,
-    extract_archive_password, whois_lookup, enrich_dns,
-    detect_typo_squatting, extract_entities, enrich_external
-)
-from skills.decision import (
-    aggregate_risk, apply_veto, recommend_actions, validate_spf_dkim
-)
+from core.replay import ReplayStore
+from core.webhooks import webhook_handler
+from skills.decision import aggregate_risk, apply_veto, recommend_actions, validate_spf_dkim
 from skills.dominance import (
-    deploy_honey_credentials, rewrite_links, containment_actions,
-    block_ip, quarantine_email, trigger_mfa_reset
-)
-from skills.reputation import (
-    check_ip_reputation, check_file_reputation, threat_intel_lookup, phishing_validation
+    block_ip,
+    containment_actions,
+    deploy_honey_credentials,
+    quarantine_email,
+    rewrite_links,
+    trigger_mfa_reset,
 )
 from skills.owasp import owasp_analysis
-from core.detonation import detonation_skill, detonate_urls
+from skills.perception import (
+    detect_typo_squatting,
+    enrich_dns,
+    enrich_external,
+    extract_archive_password,
+    extract_entities,
+    extract_urls,
+    ingest_payload,
+    scan_qr_codes,
+    whois_lookup,
+)
+from skills.reputation import check_file_reputation, check_ip_reputation, phishing_validation, threat_intel_lookup
 
 os.makedirs("data", exist_ok=True)
 
@@ -48,19 +66,29 @@ SCENARIOS = {
     "ceo_fraud": {
         "name": "CEO Fraud (Vishing/Email Combo)",
         "payload": {
-            "email": "From: ceo@cornpany.com\nSubject: Urgent wire transfer\n\nHi, I need $50K wired ASAP. Password: urgent123"
+            "email": (
+                "From: ceo@cornpany.com\nSubject: Urgent wire transfer\n\n"
+                "Hi, I need $50K wired ASAP. Password: urgent123"
+            )
         }
     },
     "credential_harvester": {
         "name": "Credential Harvester (Lookalike Domain)",
         "payload": {
-            "email": f'From: support@secure-login.xyz\nSubject: Verify account\n\nClick here: {EXAMPLE_URLS["secure_login"]}/verify [QR:{EXAMPLE_URLS["phish_qr"]}]\npassword: verify2024'
+            "email": (
+                f'From: support@secure-login.xyz\nSubject: Verify account\n\n'
+                f'Click here: {EXAMPLE_URLS["secure_login"]}/verify [QR:{EXAMPLE_URLS["phish_qr"]}]\n'
+                f"password: verify2024"
+            )
         }
     },
     "malware_drop": {
         "name": "Malware Drop (Invoice Attachment)",
         "payload": {
-            "email": f'From: billing@mycompay.co\nSubject: Overdue invoice\n\nInvoice attached. password: inv123\nDownload: {EXAMPLE_URLS["invoice"]}'
+            "email": (
+                f'From: billing@mycompay.co\nSubject: Overdue invoice\n\n'
+                f'Invoice attached. password: inv123\nDownload: {EXAMPLE_URLS["invoice"]}'
+            )
         }
     },
     "clean_alert": {
@@ -81,41 +109,143 @@ def broadcast(event, data):
         for q in sse_clients:
             try:
                 q.put(msg)
-            except:
+            except Exception:
                 dead.append(q)
         for q in dead:
             sse_clients.remove(q)
 
 def build_graph(gateway, on_node_done=None):
-    return SkillGraphRuntime(nodes=[
-        SkillNode(name="ingest", func=_wrap(ingest_payload, "ingest", on_node_done)),
-        SkillNode(name="extract_urls", func=_wrap(extract_urls, "extract_urls", on_node_done), deps=["ingest"]),
-        SkillNode(name="scan_qr_codes", func=_wrap(scan_qr_codes, "scan_qr_codes", on_node_done), deps=["ingest"]),
-        SkillNode(name="extract_archive_password", func=_wrap(extract_archive_password, "extract_archive_password", on_node_done), deps=["ingest"]),
-        SkillNode(name="whois_lookup", func=_wrap(whois_lookup, "whois_lookup", on_node_done), deps=["extract_urls"]),
-        SkillNode(name="enrich_dns", func=_wrap(enrich_dns, "enrich_dns", on_node_done), deps=["extract_urls"]),
-        SkillNode(name="detect_typo_squatting", func=_wrap(detect_typo_squatting, "detect_typo_squatting", on_node_done), deps=["extract_urls"]),
-        SkillNode(name="extract_entities", func=_wrap(extract_entities, "extract_entities", on_node_done), deps=["ingest"]),
-        SkillNode(name="enrich_external", func=_wrap(enrich_external, "enrich_external", on_node_done), deps=["extract_urls"]),
-        SkillNode(name="validate_spf_dkim", func=_wrap(validate_spf_dkim, "validate_spf_dkim", on_node_done), deps=["ingest"]),
-        SkillNode(name="detonate_urls", func=_wrap(detonation_skill, "detonate_urls", on_node_done), deps=["extract_urls"]),
-        # New v0.5 perception nodes
-        SkillNode(name="check_ip_reputation", func=_wrap(check_ip_reputation, "check_ip_reputation", on_node_done), deps=["extract_urls"]),
-        SkillNode(name="check_file_reputation", func=_wrap(check_file_reputation, "check_file_reputation", on_node_done), deps=["ingest"]),
-        SkillNode(name="threat_intel_lookup", func=_wrap(threat_intel_lookup, "threat_intel_lookup", on_node_done), deps=["extract_urls"]),
-        SkillNode(name="owasp_analysis", func=_wrap(owasp_analysis, "owasp_analysis", on_node_done), deps=["extract_urls", "ingest"]),
-        SkillNode(name="phishing_validation", func=_wrap(phishing_validation, "phishing_validation", on_node_done), deps=["ingest", "extract_urls", "validate_spf_dkim"]),
-        SkillNode(name="ml_score", func=_wrap(ml_score, "ml_score", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "extract_entities", "enrich_external", "detonate_urls", "validate_spf_dkim", "check_ip_reputation", "check_file_reputation", "threat_intel_lookup", "owasp_analysis", "phishing_validation"]),
-        SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "detonate_urls", "check_ip_reputation", "check_file_reputation", "threat_intel_lookup", "owasp_analysis", "phishing_validation"]),
-        SkillNode(name="apply_veto", func=_wrap(apply_veto, "apply_veto", on_node_done), deps=["aggregate_risk"]),
-        SkillNode(name="recommend_actions", func=_wrap(recommend_actions, "recommend_actions", on_node_done), deps=["apply_veto"]),
-        SkillNode(name="deploy_honey_credentials", func=_wrap(deploy_honey_credentials, "deploy_honey_credentials", on_node_done), deps=["recommend_actions", "apply_veto"]),
-        SkillNode(name="rewrite_links", func=_wrap(rewrite_links, "rewrite_links", on_node_done), deps=["recommend_actions", "extract_urls"]),
-        SkillNode(name="containment_actions", func=_wrap(containment_actions, "containment_actions", on_node_done), deps=["recommend_actions", "apply_veto"]),
-        SkillNode(name="block_ip", func=_wrap(block_ip, "block_ip", on_node_done), deps=["recommend_actions"]),
-        SkillNode(name="quarantine_email", func=_wrap(quarantine_email, "quarantine_email", on_node_done), deps=["recommend_actions"]),
-        SkillNode(name="trigger_mfa_reset", func=_wrap(trigger_mfa_reset, "trigger_mfa_reset", on_node_done), deps=["recommend_actions", "apply_veto"]),
-    ], gateway=gateway)
+    return SkillGraphRuntime(
+        nodes=[
+            SkillNode(name="ingest", func=_wrap(ingest_payload, "ingest", on_node_done)),
+            SkillNode(name="extract_urls", func=_wrap(extract_urls, "extract_urls", on_node_done), deps=["ingest"]),
+            SkillNode(name="scan_qr_codes", func=_wrap(scan_qr_codes, "scan_qr_codes", on_node_done), deps=["ingest"]),
+            SkillNode(
+                name="extract_archive_password",
+                func=_wrap(extract_archive_password, "extract_archive_password", on_node_done),
+                deps=["ingest"],
+            ),
+            SkillNode(
+                name="whois_lookup",
+                func=_wrap(whois_lookup, "whois_lookup", on_node_done),
+                deps=["extract_urls"],
+            ),
+            SkillNode(name="enrich_dns", func=_wrap(enrich_dns, "enrich_dns", on_node_done), deps=["extract_urls"]),
+            SkillNode(
+                name="detect_typo_squatting",
+                func=_wrap(detect_typo_squatting, "detect_typo_squatting", on_node_done),
+                deps=["extract_urls"],
+            ),
+            SkillNode(
+                name="extract_entities",
+                func=_wrap(extract_entities, "extract_entities", on_node_done),
+                deps=["ingest"],
+            ),
+            SkillNode(
+                name="enrich_external",
+                func=_wrap(enrich_external, "enrich_external", on_node_done),
+                deps=["extract_urls"],
+            ),
+            SkillNode(
+                name="validate_spf_dkim",
+                func=_wrap(validate_spf_dkim, "validate_spf_dkim", on_node_done),
+                deps=["ingest"],
+            ),
+            SkillNode(
+                name="detonate_urls",
+                func=_wrap(detonation_skill, "detonate_urls", on_node_done),
+                deps=["extract_urls"],
+            ),
+            # New v0.5 perception nodes
+            SkillNode(
+                name="check_ip_reputation",
+                func=_wrap(check_ip_reputation, "check_ip_reputation", on_node_done),
+                deps=["extract_urls"],
+            ),
+            SkillNode(
+                name="check_file_reputation",
+                func=_wrap(check_file_reputation, "check_file_reputation", on_node_done),
+                deps=["ingest"],
+            ),
+            SkillNode(
+                name="threat_intel_lookup",
+                func=_wrap(threat_intel_lookup, "threat_intel_lookup", on_node_done),
+                deps=["extract_urls"],
+            ),
+            SkillNode(
+                name="owasp_analysis",
+                func=_wrap(owasp_analysis, "owasp_analysis", on_node_done),
+                deps=["extract_urls", "ingest"],
+            ),
+            SkillNode(
+                name="phishing_validation",
+                func=_wrap(phishing_validation, "phishing_validation", on_node_done),
+                deps=["ingest", "extract_urls", "validate_spf_dkim"],
+            ),
+            SkillNode(
+                name="ml_score",
+                func=_wrap(ml_score, "ml_score", on_node_done),
+                deps=[
+                    "extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup",
+                    "enrich_dns", "detect_typo_squatting", "extract_entities", "enrich_external",
+                    "detonate_urls", "validate_spf_dkim", "check_ip_reputation",
+                    "check_file_reputation", "threat_intel_lookup", "owasp_analysis",
+                    "phishing_validation",
+                ],
+            ),
+            SkillNode(
+                name="aggregate_risk",
+                func=_wrap(aggregate_risk, "aggregate_risk", on_node_done),
+                deps=[
+                    "extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup",
+                    "enrich_dns", "detect_typo_squatting", "detonate_urls", "check_ip_reputation",
+                    "check_file_reputation", "threat_intel_lookup", "owasp_analysis",
+                    "phishing_validation",
+                ],
+            ),
+            SkillNode(
+                name="apply_veto",
+                func=_wrap(apply_veto, "apply_veto", on_node_done),
+                deps=["aggregate_risk"],
+            ),
+            SkillNode(
+                name="recommend_actions",
+                func=_wrap(recommend_actions, "recommend_actions", on_node_done),
+                deps=["apply_veto"],
+            ),
+            SkillNode(
+                name="deploy_honey_credentials",
+                func=_wrap(deploy_honey_credentials, "deploy_honey_credentials", on_node_done),
+                deps=["recommend_actions", "apply_veto"],
+            ),
+            SkillNode(
+                name="rewrite_links",
+                func=_wrap(rewrite_links, "rewrite_links", on_node_done),
+                deps=["recommend_actions", "extract_urls"],
+            ),
+            SkillNode(
+                name="containment_actions",
+                func=_wrap(containment_actions, "containment_actions", on_node_done),
+                deps=["recommend_actions", "apply_veto"],
+            ),
+            SkillNode(
+                name="block_ip",
+                func=_wrap(block_ip, "block_ip", on_node_done),
+                deps=["recommend_actions"],
+            ),
+            SkillNode(
+                name="quarantine_email",
+                func=_wrap(quarantine_email, "quarantine_email", on_node_done),
+                deps=["recommend_actions"],
+            ),
+            SkillNode(
+                name="trigger_mfa_reset",
+                func=_wrap(trigger_mfa_reset, "trigger_mfa_reset", on_node_done),
+                deps=["recommend_actions", "apply_veto"],
+            ),
+        ],
+        gateway=gateway,
+    )
 
 def _wrap(fn, name, on_node_done):
     if on_node_done is None:
@@ -190,7 +320,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             # Return current vault configuration (all secrets)
             vault_path = os.getenv("VAULT_JSON_PATH", "data/secrets.json")
             try:
-                with open(vault_path, "r") as f:
+                with open(vault_path) as f:
                     config = json.load(f)
             except FileNotFoundError:
                 config = {}
@@ -281,7 +411,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             if not self._check_role("Admin"):
                 return
             try:
-                with open(POLICY_FILE, "r", encoding="utf-8") as f:
+                with open(POLICY_FILE, encoding="utf-8") as f:
                     policy_content = f.read()
                 self._send_json({"policy": policy_content})
             except Exception as e:
@@ -479,7 +609,10 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"error": "Provide 'url' or 'content'"}, 400)
                 return
             from skills.owasp import owasp_analysis
-            scan_payload = {"extract_urls": {"urls": [url_to_scan] if url_to_scan else [], "domains": []}, "ingest": {"content": content, "type": "email"}}
+            scan_payload = {
+                "extract_urls": {"urls": [url_to_scan] if url_to_scan else [], "domains": []},
+                "ingest": {"content": content, "type": "email"},
+            }
             result = owasp_analysis(scan_payload)
             self._send_json(result.get("output", {}))
             return
@@ -490,7 +623,9 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             body_bytes = self._read_body()
             body = json.loads(body_bytes) if body_bytes else {}
             from core.remediation import get_active_adapter
-            success = get_active_adapter().execute(body.get("action", ""), body.get("target", ""), body.get("context", {}))
+            success = get_active_adapter().execute(
+                body.get("action", ""), body.get("target", ""), body.get("context", {})
+            )
             self._send_json({"status": "executed" if success else "failed"})
             return
         if path == "/api/analytics/quality":
@@ -543,7 +678,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             # Ensure directory exists
             os.makedirs(os.path.dirname(vault_path), exist_ok=True)
             try:
-                with open(vault_path, "r") as f:
+                with open(vault_path) as f:
                     existing_config = json.load(f)
             except FileNotFoundError:
                 existing_config = {}
@@ -584,7 +719,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 try:
                     self.wfile.write(msg)
                     self.wfile.flush()
-                except:
+                except Exception:
                     break
         finally:
             with sse_lock:
@@ -595,7 +730,17 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         # Skip auth for static files, login endpoint, and health/metrics
         parsed_path = self.path.split("?")
         path = parsed_path[0]
-        if path in ("/api/health", "/api/metrics", "/api/auth/login", "/", "/index.html", "/style.css", "/app.js", "/favicon.ico") or path.startswith("/api/auth/"):
+        allowed_paths = (
+            "/api/health",
+            "/api/metrics",
+            "/api/auth/login",
+            "/",
+            "/index.html",
+            "/style.css",
+            "/app.js",
+            "/favicon.ico",
+        )
+        if path in allowed_paths:
             return True
 
         # Allow if no tokens configured (dev mode)
@@ -704,7 +849,7 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 body["email"] = "From: analyst@kestrel.local\nSubject: URL Investigation\n\n" + "\n".join(url_list)
             elif isinstance(url_list, str):
                 body["email"] = "From: analyst@kestrel.local\nSubject: URL Investigation\n\n" + url_list
-        
+
         from core.privacy import redact_pii
         override_pii = body.get("override_pii", False)
         for key in ("email", "sms", "voice"):
@@ -722,8 +867,10 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         broadcast("scan_start", {"scan_id": scan_id})
         gateway = Gateway()
         def on_done(name, result):
-            broadcast("skill_done", {"scan_id": scan_id, "node": name, "output": result.get("output", {}), "confidence": result.get("confidence", 0)})
-            replay_store.add_event(scan_id, name, result.get("output", {}), result.get("confidence", 0))
+            output = result.get("output", {})
+            confidence = result.get("confidence", 0)
+            broadcast("skill_done", {"scan_id": scan_id, "node": name, "output": output, "confidence": confidence})
+            replay_store.add_event(scan_id, name, output, confidence)
         runtime = build_graph(gateway, on_node_done=on_done)
         try:
             global scan_count, last_risk_score
@@ -752,12 +899,16 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             is_allowed = True
             try:
                 ip_rep_malicious = any(
-                    info.get("malicious") for info in final_output.get("check_ip_reputation", {}).get("ip_reputation", {}).values()
+                    info.get("malicious")
+                    for info in final_output.get("check_ip_reputation", {}).get("ip_reputation", {}).values()
                 )
-                file_rep_malicious = final_output.get("check_file_reputation", {}).get("file_reputation", {}).get("malicious", False)
+                file_rep_malicious = (
+                    final_output.get("check_file_reputation", {}).get("file_reputation", {}).get("malicious", False)
+                )
                 ioc_count = len(final_output.get("threat_intel_lookup", {}).get("threat_intel", []))
                 phish_likely = final_output.get("phishing_validation", {}).get("phishing_likely", False)
                 owasp_critical = final_output.get("owasp_analysis", {}).get("by_severity", {}).get("critical", 0)
+                detonation_summary = final_output.get("detonate_urls", {}).get("detonation", {})
 
                 is_allowed = policy_engine.evaluate({
                     "risk_score": risk_score,
@@ -766,8 +917,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                     "archive_password": final_output.get("extract_archive_password", {}).get("archive_password", ""),
                     "is_whitelisted": False,
                     "is_spoofed": final_output.get("validate_spf_dkim", {}).get("is_spoofed", False),
-                    "malicious_count": final_output.get("detonate_urls", {}).get("detonation", {}).get("malicious_count", 0),
-                    "suspicious_count": final_output.get("detonate_urls", {}).get("detonation", {}).get("suspicious_count", 0),
+                    "malicious_count": detonation_summary.get("malicious_count", 0),
+                    "suspicious_count": detonation_summary.get("suspicious_count", 0),
                     "ml_risk_score": final_output.get("ml_score", {}).get("ml_risk_score", 0),
                     "ml_confidence": final_output.get("ml_score", {}).get("ml_confidence", 0),
                     "typo_squatting": final_output.get("detect_typo_squatting", {}).get("typo_squatting", []),
@@ -797,10 +948,24 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             elif decision == "DENY" and risk_score >= 20:
                 drift_tracker.record_tp("remediation_rule")
             drift_status = drift_tracker.stats("remediation_rule")
-            broadcast("drift_status", {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status})
+            broadcast(
+                "drift_status",
+                {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status},
+            )
 
-            broadcast("run_complete", {"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "enrichment": enrichment, "pii_redacted": body.get("_pii_redacted", False)})
-            self._send_json({"scan_id": scan_id, "decision": decision, "risk_score": risk_score, "confidence": confidence, "actions": actions, "dominance": dominance, "enrichment": enrichment, "ml_confidence": result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None), "pii_redacted": body.get("_pii_redacted", False)})
+            run_payload = {
+                "scan_id": scan_id,
+                "decision": decision,
+                "risk_score": risk_score,
+                "confidence": confidence,
+                "actions": actions,
+                "dominance": dominance,
+                "enrichment": enrichment,
+                "pii_redacted": body.get("_pii_redacted", False),
+            }
+            broadcast("run_complete", run_payload)
+            ml_confidence = result.get("graph_output", {}).get("ml_score", {}).get("ml_confidence", None)
+            self._send_json({**run_payload, "ml_confidence": ml_confidence})
         except Exception as e:
             broadcast("run_error", {"scan_id": scan_id, "error": str(e)})
             self._send_json({"scan_id": scan_id, "error": str(e)}, 500)
@@ -816,7 +981,15 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 
     def _serve_static(self, path):
         ext = os.path.splitext(path)[1]
-        types = {".html": "text/html", ".css": "text/css", ".js": "application/javascript", ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon"}
+        types = {
+            ".html": "text/html",
+            ".css": "text/css",
+            ".js": "application/javascript",
+            ".json": "application/json",
+            ".png": "image/png",
+            ".svg": "image/svg+xml",
+            ".ico": "image/x-icon",
+        }
         ctype = types.get(ext, "application/octet-stream")
         try:
             with open(path, "rb") as f:

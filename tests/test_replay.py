@@ -1,8 +1,10 @@
-import unittest
 import os
 import tempfile
+import unittest
 from unittest.mock import patch
+
 from core.replay import ReplayStore
+
 
 class TestReplayStore(unittest.TestCase):
     def setUp(self):
@@ -101,6 +103,29 @@ class TestReplayStore(unittest.TestCase):
         with patch("core.replay.time.sleep", side_effect=[None, KeyboardInterrupt]):
             with self.assertRaises(KeyboardInterrupt):
                 self.store._purge_loop()
+
+    def test_stats_skips_corrupt_row(self):
+        # A valid row then a corrupt row: stats must not crash
+        self.store.store("s1", {}, {"risk_score": 50, "confidence": 80}, "ALLOW", 50, 80, ["allow"])
+        self.store.conn.execute(
+            "INSERT INTO replay_traces (scan_id, data, created_at) VALUES (?, ?, ?)",
+            ("corrupt1", "not-valid-encrypted-data", 0),
+        )
+        self.store.conn.commit()
+        stats = self.store.stats()
+        self.assertEqual(stats["total_scans"], 2)
+        self.assertEqual(stats["allow_count"], 1)
+        self.assertEqual(stats["avg_risk"], 50.0)
+
+    def test_risk_trend_skips_corrupt_row(self):
+        self.store.store("s1", {}, {}, "ALLOW", 10, 50, [])
+        self.store.conn.execute(
+            "INSERT INTO replay_traces (scan_id, data, created_at) VALUES (?, ?, ?)",
+            ("corrupt2", "garbage", 1),
+        )
+        self.store.conn.commit()
+        trend = self.store.risk_trend()
+        self.assertEqual(len(trend), 1)
 
 if __name__ == "__main__":
     unittest.main()

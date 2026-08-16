@@ -1,17 +1,17 @@
 import json
 import logging
+from typing import Any
 from urllib.request import Request, urlopen
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger("apcs")
 
 class CiscoESA:
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.host = self.config.get("host", "")
         self.api_key = self.config.get("api_key", "")
 
-    def _request(self, method: str, path: str, data: Optional[Dict] = None) -> Optional[Dict]:
+    def _request(self, method: str, path: str, data: dict | None = None) -> dict | None:
         if not self.host or not self.api_key:
             logger.warning("Cisco ESA: missing host or api_key")
             return None
@@ -44,7 +44,7 @@ class CiscoESA:
         })
         return result is not None
 
-    def get_message_detail(self, message_id: str) -> Dict[str, Any]:
+    def get_message_detail(self, message_id: str) -> dict[str, Any]:
         result = self._request("GET", f"/messages/{message_id}/details")
         return result or {"verdict": "unknown", "source": "mock"}
 

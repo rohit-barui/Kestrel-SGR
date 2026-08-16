@@ -1,8 +1,10 @@
 import os
-import time
 import tempfile
+import time
 import unittest
+
 from core.replay import ReplayStore
+
 
 class TestReplayPurge(unittest.TestCase):
     def setUp(self):

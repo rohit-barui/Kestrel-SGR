@@ -2,7 +2,6 @@ import abc
 import json
 import logging
 from urllib.request import Request, urlopen
-from typing import Any, Dict, Optional
 
 logger = logging.getLogger("apcs")
 

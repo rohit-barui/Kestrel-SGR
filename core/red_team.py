@@ -1,6 +1,7 @@
-from typing import Dict, Any
+from typing import Any
 
-def generate_ceo_fraud() -> Dict[str, Any]:
+
+def generate_ceo_fraud() -> dict[str, Any]:
     return {
         "email": (
             "From: ceo@cornpany.com\n"
@@ -12,7 +13,7 @@ def generate_ceo_fraud() -> Dict[str, Any]:
         )
     }
 
-def generate_credential_harvester() -> Dict[str, Any]:
+def generate_credential_harvester() -> dict[str, Any]:
     return {
         "email": (
             "From: support@secure-login.xyz\n"
@@ -24,7 +25,7 @@ def generate_credential_harvester() -> Dict[str, Any]:
         )
     }
 
-def generate_malware_drop() -> Dict[str, Any]:
+def generate_malware_drop() -> dict[str, Any]:
     return {
         "email": (
             "From: billing@mycompay.co\n"
@@ -36,7 +37,7 @@ def generate_malware_drop() -> Dict[str, Any]:
         )
     }
 
-def generate_all() -> Dict[str, Dict[str, Any]]:
+def generate_all() -> dict[str, dict[str, Any]]:
     return {
         "ceo_fraud": generate_ceo_fraud(),
         "credential_harvester": generate_credential_harvester(),

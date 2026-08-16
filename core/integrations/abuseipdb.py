@@ -1,18 +1,18 @@
 import json
 import logging
 import os
+from typing import Any
 from urllib.request import Request, urlopen
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger("apcs")
 
 class AbuseIPDB:
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.api_key = self.config.get("api_key", os.environ.get("ABUSEIPDB_API_KEY", ""))
         self.base = "https://api.abuseipdb.com/api/v2"
 
-    def check_ip(self, ip: str, max_age: int = 90) -> Dict[str, Any]:
+    def check_ip(self, ip: str, max_age: int = 90) -> dict[str, Any]:
         if not self.api_key:
             return {"ip": ip, "reputation": "unknown", "score": 0, "source": "abuseipdb"}
         try:

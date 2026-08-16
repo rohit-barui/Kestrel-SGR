@@ -7,7 +7,7 @@ replaced by more sophisticated ML/LLM models later without changing the SGR
 interface.
 """
 
-from typing import Dict, Any, List
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # JSON Schema constants for input/output validation
@@ -140,7 +140,7 @@ def _default_confidence() -> int:
 # Skill implementations
 # ---------------------------------------------------------------------------
 
-def aggregate_risk(perception_payload: Dict[str, Any]) -> Dict[str, Any]:
+def aggregate_risk(perception_payload: dict[str, Any]) -> dict[str, Any]:
     urls = perception_payload.get("extract_urls", {}).get("urls", [])
     qr_urls = perception_payload.get("scan_qr_codes", {}).get("qr_urls", [])
     archive_pwd = perception_payload.get("extract_archive_password", {}).get("archive_password", "")
@@ -247,7 +247,7 @@ def aggregate_risk(perception_payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"output": {"risk_score": risk_score}, "confidence": _default_confidence()}
 
 
-def apply_veto(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
+def apply_veto(decision_payload: dict[str, Any]) -> dict[str, Any]:
     risk = decision_payload.get("aggregate_risk", {}).get("risk_score", 0)
     spf = decision_payload.get("validate_spf_dkim", {})
     detonation = decision_payload.get("detonate_urls", {}).get("detonation", {})
@@ -293,7 +293,7 @@ def apply_veto(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"output": {"risk_score": risk, "final_confidence": confidence}, "confidence": confidence}
 
 
-def recommend_actions(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
+def recommend_actions(decision_payload: dict[str, Any]) -> dict[str, Any]:
     risk = decision_payload.get("apply_veto", {}).get("risk_score", 0)
     confidence = decision_payload.get("apply_veto", {}).get("final_confidence", 50)
     spf = decision_payload.get("validate_spf_dkim", {})
@@ -319,7 +319,7 @@ def recommend_actions(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
 
     return {"output": {"actions": actions}, "confidence": _default_confidence()}
 
-def validate_spf_dkim(payload: Dict[str, Any]) -> Dict[str, Any]:
+def validate_spf_dkim(payload: dict[str, Any]) -> dict[str, Any]:
     content = payload.get("ingest", {}).get("content", "")
     spf_result = "neutral"
     dkim_result = "neutral"

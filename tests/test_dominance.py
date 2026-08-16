@@ -1,5 +1,15 @@
 import unittest
-from skills.dominance import deploy_honey_credentials, rewrite_links, containment_actions, block_ip, quarantine_email, trigger_mfa_reset, rollback_noop
+
+from skills.dominance import (
+    block_ip,
+    containment_actions,
+    deploy_honey_credentials,
+    quarantine_email,
+    rewrite_links,
+    rollback_noop,
+    trigger_mfa_reset,
+)
+
 
 class TestDominance(unittest.TestCase):
     def test_deploy_honey_creds_on_block(self):

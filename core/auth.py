@@ -1,18 +1,17 @@
 """Simple API token authentication for APCS."""
 
-import hashlib
-import os
 import json
+import os
 import secrets
 import time
-from typing import Optional, Dict, Any
+from typing import Any
 
 TOKEN_FILE = os.environ.get("APCS_TOKEN_FILE", "apcs_tokens.json")
 
 class AuthManager:
     def __init__(self, token_file: str = TOKEN_FILE):
         self.token_file = token_file
-        self._tokens: Dict[str, dict] = {}
+        self._tokens: dict[str, dict] = {}
         self._load()
 
     def _load(self):
@@ -33,7 +32,7 @@ class AuthManager:
         self._save()
         return token
 
-    def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
+    def validate_token(self, token: str) -> dict[str, Any] | None:
         # Reload token file if token not in memory (helps when tokens are added after server start)
         if token not in self._tokens:
             self._load()
@@ -52,7 +51,7 @@ class AuthManager:
             return True
         return False
 
-    def list_tokens(self) -> Dict[str, dict]:
+    def list_tokens(self) -> dict[str, dict]:
         return {k[:8] + "...": v for k, v in self._tokens.items()}
 
     def has_tokens(self) -> bool:

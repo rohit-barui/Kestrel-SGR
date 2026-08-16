@@ -4,14 +4,13 @@ Provides URL/domain reputation checking via cyberwatch.co.in and
 a detonation skill for the SGR graph.
 """
 
-import re
-import json
-import time
 import hashlib
-import urllib.request
-import urllib.error
+import json
 import logging
-from typing import Dict, Any, List, Optional
+import re
+import urllib.error
+import urllib.request
+from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger("apcs")
@@ -23,7 +22,7 @@ DETONATION_EXTERNAL_SOURCES = [
 ]
 
 
-def _fetch_url(url: str, timeout: int = 10) -> Optional[Dict[str, Any]]:
+def _fetch_url(url: str, timeout: int = 10) -> dict[str, Any] | None:
     """Fetch a URL and return parsed JSON or None."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Kestrel-SGR/0.4.0"})
@@ -35,7 +34,7 @@ def _fetch_url(url: str, timeout: int = 10) -> Optional[Dict[str, Any]]:
         return None
 
 
-def check_url_reputation(url: str) -> Dict[str, Any]:
+def check_url_reputation(url: str) -> dict[str, Any]:
     """Check a URL's reputation via CyberWatch and local heuristics.
 
     Returns a dict with:
@@ -49,7 +48,7 @@ def check_url_reputation(url: str) -> Dict[str, Any]:
     parsed = urlparse(url)
     domain = parsed.netloc or parsed.path.split("/")[0]
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "url": url,
         "domain": domain,
         "reputation": "unknown",
@@ -99,12 +98,14 @@ def check_url_reputation(url: str) -> Dict[str, Any]:
         ext_score = cw_result.get("score", cw_result.get("risk_score", 0))
         if ext_score:
             result["score"] = min(result["score"] + ext_score // 2, 100)
-            result["reputation"] = "malicious" if result["score"] >= 50 else ("suspicious" if result["score"] >= 20 else "safe")
+            result["reputation"] = (
+                "malicious" if result["score"] >= 50 else ("suspicious" if result["score"] >= 20 else "safe")
+            )
 
     return result
 
 
-def detonate_urls(urls: List[str]) -> Dict[str, Any]:
+def detonate_urls(urls: list[str]) -> dict[str, Any]:
     """Detonate multiple URLs: check each URL's reputation.
 
     Returns:
@@ -144,7 +145,7 @@ def detonate_urls(urls: List[str]) -> Dict[str, Any]:
     }
 
 
-def detonation_skill(payload: Dict[str, Any]) -> Dict[str, Any]:
+def detonation_skill(payload: dict[str, Any]) -> dict[str, Any]:
     """SGR skill node: perform URL detonation on extracted URLs.
 
     Expects payload with key 'extract_urls' containing {'urls': [...]}.

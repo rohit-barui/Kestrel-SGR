@@ -1,6 +1,6 @@
-import re
 import logging
-from typing import Dict, Any, List
+import re
+from typing import Any
 
 logger = logging.getLogger("apcs")
 
@@ -88,7 +88,7 @@ OWASP_PATTERNS = [
 ]
 
 
-def owasp_analysis(payload: Dict[str, Any]) -> Dict[str, Any]:
+def owasp_analysis(payload: dict[str, Any]) -> dict[str, Any]:
     urls = payload.get("extract_urls", {}).get("urls", [])
     content = payload.get("ingest", {}).get("content", "")
     domains = payload.get("extract_urls", {}).get("domains", [])

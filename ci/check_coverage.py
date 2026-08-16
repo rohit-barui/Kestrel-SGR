@@ -16,6 +16,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 COVERAGE_XML = Path('coverage.xml')
+SOURCE_ROOTS = ("core", "skills")
 FAIL = False
 
 if not COVERAGE_XML.is_file():
@@ -34,13 +35,32 @@ else:
     print(f'✅ Overall coverage {overall_percent:.2f}%')
 
 # Per‑file check
+def normalize_filename(filename: str) -> str | None:
+    """Return 'core/…' or 'skills/…' style path when filename is a source file.
+
+    coverage.py reports paths relative to the measured source roots, so on
+    some platforms files appear as basenames (e.g. 'decision.py' for
+    'core/decision.py'). Resolve those back to the full source path.
+    """
+    filename = filename.replace('\\', '/')
+    for root_name in SOURCE_ROOTS:
+        if filename.startswith(root_name + '/'):
+            return filename
+    # Basename form – locate the file under a source root.
+    for root_name in SOURCE_ROOTS:
+        candidate = Path(root_name) / filename
+        if candidate.is_file():
+            return candidate.as_posix()
+    return None
+
 for cls in root.iter('class'):
-    filename = cls.attrib.get('filename', '')
-    if not (filename.startswith('core/') or filename.startswith('skills/')):
+    raw_filename = cls.attrib.get('filename', '')
+    resolved = normalize_filename(raw_filename)
+    if resolved is None:
         continue
     file_cov = float(cls.attrib.get('line-rate', '0')) * 100
     if file_cov < 99.0:
-        sys.stderr.write(f'❌ {filename} coverage {file_cov:.2f}% < 99%\n')
+        sys.stderr.write(f'❌ {resolved} coverage {file_cov:.2f}% < 99%\n')
         FAIL = True
 
 if FAIL:

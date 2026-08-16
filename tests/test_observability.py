@@ -1,11 +1,17 @@
-import unittest, json, threading, time, http.client
-import sys, os
+import http.client
+import json
+import os
+import sys
+import threading
+import time
+import unittest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 class TestHealthEndpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from server import APIHandler, ThreadedHTTPServer, PORT
+        from server import PORT, APIHandler, ThreadedHTTPServer
         cls.server = ThreadedHTTPServer(('127.0.0.1', PORT + 1), APIHandler)
         cls.port = PORT + 1
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)

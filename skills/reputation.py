@@ -1,12 +1,12 @@
-import logging
 import hashlib
-import re
-from typing import Dict, Any, List
+import logging
+from typing import Any
+
+from core.integrations import AbuseIPDB, AlienVaultOTX, VirusTotal
+from core.vault import get_secret
 
 logger = logging.getLogger("apcs")
 
-from core.integrations import VirusTotal, AbuseIPDB, AlienVaultOTX
-from core.vault import get_secret
 
 def _load_integration_config(provider: str) -> dict:
     try:
@@ -17,9 +17,8 @@ def _load_integration_config(provider: str) -> dict:
         pass
     return {}
 
-def check_ip_reputation(payload: Dict[str, Any]) -> Dict[str, Any]:
+def check_ip_reputation(payload: dict[str, Any]) -> dict[str, Any]:
     domains = payload.get("extract_urls", {}).get("domains", [])
-    urls = payload.get("extract_urls", {}).get("urls", [])
 
     vt = VirusTotal(_load_integration_config("virustotal"))
     abuse = AbuseIPDB(_load_integration_config("abuseipdb"))
@@ -49,7 +48,7 @@ def check_ip_reputation(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"output": {"ip_reputation": results}, "confidence": 85 if results else 20}
 
 
-def check_file_reputation(payload: Dict[str, Any]) -> Dict[str, Any]:
+def check_file_reputation(payload: dict[str, Any]) -> dict[str, Any]:
     content = payload.get("ingest", {}).get("content", "")
     results = {}
 
@@ -101,7 +100,7 @@ def check_file_reputation(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def threat_intel_lookup(payload: Dict[str, Any]) -> Dict[str, Any]:
+def threat_intel_lookup(payload: dict[str, Any]) -> dict[str, Any]:
     urls = payload.get("extract_urls", {}).get("urls", [])
     domains = payload.get("extract_urls", {}).get("domains", [])
 
@@ -132,10 +131,8 @@ def threat_intel_lookup(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def phishing_validation(payload: Dict[str, Any]) -> Dict[str, Any]:
-    content = payload.get("ingest", {}).get("content", "")
+def phishing_validation(payload: dict[str, Any]) -> dict[str, Any]:
     urls = payload.get("extract_urls", {}).get("urls", [])
-    domains = payload.get("extract_urls", {}).get("domains", [])
     spf = payload.get("validate_spf_dkim", {})
 
     signals = {

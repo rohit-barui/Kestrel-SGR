@@ -1,6 +1,6 @@
-from typing import List
 
-def combine(scores: List[float], weights: List[float] = None) -> float:
+
+def combine(scores: list[float], weights: list[float] = None) -> float:
     if not scores:
         return 0.0
     if weights is None:
