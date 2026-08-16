@@ -60,6 +60,24 @@
         <label>Payload Preview</label>
         <div class="data-block" id="payloadPreview">{ }</div>
       </div>
+      <hr style="border-color: var(--panel-border); margin: 20px 0;">
+
+      <div class="control-group">
+        <label for="urlDomainInput">URL / Domain Investigation</label>
+        <input type="text" id="urlDomainInput" placeholder="https://suspicious-site.xyz or domain.com (comma-separated)">
+      </div>
+      <button id="runUrlScanBtn" class="action-btn" style="width: 100%;">Detonate URLs / Domains</button>
+
+      <hr style="border-color: var(--panel-border); margin: 20px 0;">
+
+      <div class="control-group">
+        <label for="fileUploadInput">Upload Email / Attachment</label>
+        <input type="file" id="fileUploadInput" accept=".eml,.txt,.msg,.html">
+      </div>
+      <button id="runFileUploadBtn" class="action-btn" style="width: 100%;">Upload & Scan</button>
+
+      <hr style="border-color: var(--panel-border); margin: 20px 0;">
+
       <div class="control-group" style="margin-top: 24px;">
         <label for="customScanInput">Custom Investigation</label>
         <textarea id="customScanInput" rows="4" placeholder="Paste suspicious email headers and body here..."></textarea>
@@ -95,6 +113,13 @@
         <h2>SOAR Playbooks</h2>
         <div id="actionsArea">
           <span style="color: var(--text-dim); font-size: 11px;">Waiting for scan...</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 8px; margin-bottom: 16px;">
+        <h2>Detonation Results</h2>
+        <div id="detonationArea">
+          <span style="color: var(--text-dim); font-size: 11px;">No URLs detonated yet. Run a scan or submit URLs above.</span>
         </div>
       </div>
 

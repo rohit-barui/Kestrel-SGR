@@ -32,6 +32,7 @@ from skills.dominance import (
     deploy_honey_credentials, rewrite_links, containment_actions,
     block_ip, quarantine_email, trigger_mfa_reset
 )
+from core.detonation import detonation_skill, detonate_urls
 
 os.makedirs("data", exist_ok=True)
 
@@ -93,8 +94,9 @@ def build_graph(gateway, on_node_done=None):
         SkillNode(name="extract_entities", func=_wrap(extract_entities, "extract_entities", on_node_done), deps=["ingest"]),
         SkillNode(name="enrich_external", func=_wrap(enrich_external, "enrich_external", on_node_done), deps=["extract_urls"]),
         SkillNode(name="validate_spf_dkim", func=_wrap(validate_spf_dkim, "validate_spf_dkim", on_node_done), deps=["ingest"]),
-        SkillNode(name="ml_score", func=_wrap(ml_score, "ml_score", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "extract_entities", "enrich_external", "validate_spf_dkim"]),
-        SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting"]),
+        SkillNode(name="detonate_urls", func=_wrap(detonation_skill, "detonate_urls", on_node_done), deps=["extract_urls"]),
+        SkillNode(name="ml_score", func=_wrap(ml_score, "ml_score", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "extract_entities", "enrich_external", "detonate_urls", "validate_spf_dkim"]),
+        SkillNode(name="aggregate_risk", func=_wrap(aggregate_risk, "aggregate_risk", on_node_done), deps=["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "detonate_urls"]),
         SkillNode(name="apply_veto", func=_wrap(apply_veto, "apply_veto", on_node_done), deps=["aggregate_risk"]),
         SkillNode(name="recommend_actions", func=_wrap(recommend_actions, "recommend_actions", on_node_done), deps=["apply_veto"]),
         SkillNode(name="deploy_honey_credentials", func=_wrap(deploy_honey_credentials, "deploy_honey_credentials", on_node_done), deps=["recommend_actions", "apply_veto"]),
@@ -346,6 +348,51 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             contains_pii = redacted != text
             self._send_json({"contains_pii": contains_pii, "redacted": redacted})
             return
+        if path == "/api/detonate":
+            body_bytes = self._read_body()
+            body = json.loads(body_bytes) if body_bytes else {}
+            urls = body.get("urls", [])
+            if not urls:
+                self._send_json({"error": "Missing 'urls' field"}, 400)
+                return
+            result = detonate_urls(urls)
+            self._send_json(result)
+            return
+        if path == "/api/scan/upload":
+            body_bytes = self._read_body()
+            content_type = self.headers.get("Content-Type", "")
+            text = None
+            filename = "uploaded_file"
+
+            if "multipart/form-data" in content_type:
+                boundary = content_type.split("boundary=")[-1].strip()
+                marker = ("--" + boundary).encode()
+                parts = body_bytes.split(marker)
+                for part in parts:
+                    hdr_end = part.find(b"\r\n\r\n")
+                    if hdr_end == -1:
+                        continue
+                    hdr_text = part[:hdr_end].decode(errors="replace")
+                    if 'name="file"' in hdr_text or 'name="file"' in hdr_text.lower():
+                        raw = part[hdr_end + 4:]
+                        for suffix in (b"\r\n--", b"--", b"\r\n"):
+                            if raw.endswith(suffix):
+                                raw = raw[:-len(suffix)]
+                        text = raw.decode("utf-8", errors="replace")
+                        import re as _re
+                        fn_m = _re.search(r'filename="([^"]*)"', hdr_text)
+                        if fn_m:
+                            filename = fn_m.group(1)
+                        break
+            else:
+                text = body_bytes.decode("utf-8", errors="replace") if body_bytes else ""
+
+            if not text or len(text.strip()) < 2:
+                self._send_json({"error": "No file or text content in upload"}, 400)
+                return
+            scan_body = {"email": text, "_filename": filename}
+            self._run_scan(scan_body)
+            return
         if path == "/api/action":
             body_bytes = self._read_body()
             body = json.loads(body_bytes) if body_bytes else {}
@@ -539,15 +586,15 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
     def _validate_scan_body(self, body):
         if not isinstance(body, dict):
             return False, "Body must be a JSON object"
-        if not any(k in body for k in ("email", "sms", "voice")):
-            return False, "Body must contain 'email', 'sms', or 'voice' field"
+        if not any(k in body for k in ("email", "sms", "voice", "urls")):
+            return False, "Body must contain 'email', 'sms', 'voice', or 'urls' field"
         for key in ("email", "sms", "voice"):
             val = body.get(key)
             if val is not None:
                 if not isinstance(val, str):
                     return False, f"'{key}' must be a string"
-                if len(val) > 10000:
-                    return False, f"'{key}' exceeds 10000 character limit"
+                if len(val) > 500000:
+                    return False, f"'{key}' exceeds 500000 character limit"
         return True, ""
 
     def _run_scan(self, body):
@@ -556,6 +603,14 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": err}, 400)
             return
         scan_id = uuid.uuid4().hex[:8]
+
+        # Convert urls field to email format for the pipeline
+        if "urls" in body and not any(k in body for k in ("email", "sms", "voice")):
+            url_list = body["urls"]
+            if isinstance(url_list, list):
+                body["email"] = "From: analyst@kestrel.local\nSubject: URL Investigation\n\n" + "\n".join(url_list)
+            elif isinstance(url_list, str):
+                body["email"] = "From: analyst@kestrel.local\nSubject: URL Investigation\n\n" + url_list
         
         from core.privacy import redact_pii
         override_pii = body.get("override_pii", False)
@@ -596,7 +651,21 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             confidence = result["aggregated_confidence"]
             is_allowed = True
             try:
-                is_allowed = policy_engine.evaluate({"risk_score": risk_score, "confidence": confidence, "urls": final_output.get("extract_urls", {}).get("urls", []), "archive_password": final_output.get("extract_archive_password", {}).get("archive_password", ""), "is_whitelisted": False})
+                is_allowed = policy_engine.evaluate({
+                    "risk_score": risk_score,
+                    "confidence": confidence,
+                    "urls": final_output.get("extract_urls", {}).get("urls", []),
+                    "archive_password": final_output.get("extract_archive_password", {}).get("archive_password", ""),
+                    "is_whitelisted": False,
+                    "is_spoofed": final_output.get("validate_spf_dkim", {}).get("is_spoofed", False),
+                    "malicious_count": final_output.get("detonate_urls", {}).get("detonation", {}).get("malicious_count", 0),
+                    "suspicious_count": final_output.get("detonate_urls", {}).get("detonation", {}).get("suspicious_count", 0),
+                    "ml_risk_score": final_output.get("ml_score", {}).get("ml_risk_score", 0),
+                    "ml_confidence": final_output.get("ml_score", {}).get("ml_confidence", 0),
+                    "typo_squatting": final_output.get("detect_typo_squatting", {}).get("typo_squatting", []),
+                    "spf_result": final_output.get("validate_spf_dkim", {}).get("spf_result", "neutral"),
+                    "dmarc_result": final_output.get("validate_spf_dkim", {}).get("dmarc_result", "neutral"),
+                })
             except Exception:
                 pass
             decision = "ALLOW" if is_allowed else "DENY"
@@ -604,15 +673,15 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             notifier.alert(scan_id, risk_score, decision, actions, dominance)
 
             # Drift tracking – feedback loop
-            if decision == "ALLOW" and risk_score > 70:
+            if decision == "ALLOW" and risk_score > 60:
                 drift_tracker.record_fn("remediation_rule")
                 broadcast("drift_update", {"type": "false_negative", "decision": decision, "risk_score": risk_score})
-            elif decision == "DENY" and risk_score < 30:
+            elif decision == "DENY" and risk_score < 20:
                 drift_tracker.record_fp("remediation_rule")
                 broadcast("drift_update", {"type": "false_positive", "decision": decision, "risk_score": risk_score})
-            elif decision == "ALLOW" and risk_score <= 70:
+            elif decision == "ALLOW" and risk_score <= 60:
                 drift_tracker.record_tn("remediation_rule")
-            elif decision == "DENY" and risk_score >= 30:
+            elif decision == "DENY" and risk_score >= 20:
                 drift_tracker.record_tp("remediation_rule")
             drift_status = drift_tracker.stats("remediation_rule")
             broadcast("drift_status", {"adjusting": drift_tracker.should_adjust("remediation_rule"), "stats": drift_status})

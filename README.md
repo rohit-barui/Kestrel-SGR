@@ -1,4 +1,4 @@
-# Autonomous Phishing Control System (APCS)
+# Kestrel-SGR (APCS) — Autonomous Phishing Control System
 
 **APCS** is a deterministic, multi‑plane security control system that detects, analyzes, predicts, and actively neutralises social‑engineering threats (phishing, smishing, vishing) across enterprise environments.
 
@@ -7,11 +7,14 @@
 ## Features
 - **Skill Graph Runtime (SGR)** – DAG executor with schema validation and confidence aggregation.
 - **Lightweight Rego policy engine** – Python‑based OPA evaluator.
-- **Perception plane** – Email/SMS/voice ingestion, QR‑code scanning, archive‑password extraction, WHOIS caching, typo‑squatting detection.
-- **Decision plane** – Weighted risk scoring, veto/override logic, action recommendation.
-- **ML Scorer** – Optional machine‑learning based risk estimation displayed on the dashboard (ML Confidence).
-- **Dashboard** – Glass‑morphic web UI to run preset threat scenarios, visualise the skill graph and view forensics.
+- **Perception plane** – Email/SMS/voice ingestion, QR‑code scanning, archive‑password extraction, WHOIS caching, typo‑squatting detection, DNS enrichment, SPF/DKIM/DMARC validation, entity extraction.
+- **URL Detonation** – Multi‑link reputation checking via CyberWatch + local heuristics; classifies URLs as malicious/suspicious/safe.
+- **File Upload** – Upload `.eml`, `.txt`, `.msg`, `.html` files directly for scanning.
+- **Decision plane** – Weighted risk scoring (signals from SPF, ML, detonation, enrichment), veto/override logic, action recommendation.
+- **ML Scorer** – Optional machine‑learning based risk estimation.
+- **Dashboard** – Glass‑morphic web UI with scan scenarios, file upload, URL detonation, live DAG visualization, forensics, and SOAR playbooks.
 - **Transaction saga & gateway** – Automatic rollback of side‑effects on failure.
+- **303 passing tests** – Full CI pipeline with coverage enforcement.
 
 ---
 
@@ -36,10 +39,16 @@ The script:
 ## API Endpoints
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/scan` | Run the SGR graph on a supplied payload (email, SMS, voice transcript). |
+| `POST` | `/api/scan` | Run the SGR graph on a supplied payload (email, SMS, voice, or URLs). |
+| `POST` | `/api/scan/upload` | Upload `.eml`/`.txt`/`.msg`/`.html` files for automatic scanning. |
+| `POST` | `/api/detonate` | Submit URLs/domains for reputation analysis via CyberWatch integration. |
 | `GET`  | `/api/scenarios` | List preset threat scenarios (CEO fraud, credential harvester, malware drop, clean alert). |
 | `GET`  | `/api/policies` | Retrieve current Rego policies. |
 | `PUT`  | `/api/policies` | Update Rego policies (JSON body with `policy` field). |
+| `GET`  | `/api/health` | Server health check (version, uptime, scans processed). |
+| `GET`  | `/api/stats` | Scan statistics (total, avg risk, allow/deny counts). |
+| `GET`  | `/api/trend` | Risk trend data for dashboard charts. |
+| `GET`  | `/api/replay/<scan_id>` | Retrieve forensic trace for a completed scan. |
 
 ---
 
@@ -78,7 +87,10 @@ Kestrel‑SGR-repo/
 │   ├─ reasoning.py
 │   ├─ drift.py
 │   ├─ replay.py
-│   └─ red_team.py
+│   ├─ red_team.py
+│   ├─ detonation.py       # URL/domain detonation engine
+│   ├─ enricher.py         # External enrichment (DNS, WHOIS)
+│   └─ ml.py               # ML risk scoring
 ├─ skills/                 # Perception, decision, dominance
 │   ├─ __init__.py
 │   ├─ perception.py
@@ -124,9 +136,12 @@ Each top‑level folder has a single responsibility, making the codebase easy to
 
 ## Skills Package (`skills/`)
 ### perception.py
-- `ingest_payload`, `extract_urls`, `scan_qr_codes`, `extract_archive_password`, `whois_lookup`, `enrich_dns`, `detect_typo_squatting`.
+- `ingest_payload`, `extract_urls`, `scan_qr_codes`, `extract_archive_password`, `whois_lookup`, `enrich_dns`, `detect_typo_squatting`, `extract_entities`, `enrich_external`.
 ### decision.py
 - `aggregate_risk`, `apply_veto`, `recommend_actions`, `validate_spf_dkim`.
+  - Risk scoring now consumes: URL/QR/archive signals, WHOIS, typo detection, **detonation reputation**, **SPF/DKIM/DMARC spoof flags**, **ML risk score**, **entity extraction counts**, **external URL suspicion scores**.
+  - Veto hard-overrides on spoofed emails, malicious detonations, and high ML risk.
+  - Action recommendations include `alert_admin`, `review`, `monitor` variants based on confidence.
 ### dominance.py
 - `deploy_honey_credentials`, `rewrite_links`, `block_ip`, `quarantine_email`, `trigger_mfa_reset`.
 All skills expose `input_schema` and `output_schema` for automatic validation by the engine.
@@ -134,7 +149,7 @@ All skills expose `input_schema` and `output_schema` for automatic validation by
 ---
 
 ## Policies (`policies/`)
-`remediation.rego` contains OPA Rego rules that decide whether to **ALLOW** or **DENY** remediation actions based on risk score, confidence, extracted URLs, detected passwords, etc.  The policy engine compiles this file and evaluates it against the decision payload.
+`remediation.rego` contains OPA Rego rules that decide whether to **ALLOW** or **DENY** remediation actions based on risk score, confidence, extracted URLs, detected passwords, SPF/DKIM spoof status, detonation malicious counts, ML risk scores, and typo‑squatting results.  The policy engine compiles this file and evaluates it against the decision payload.
 
 ---
 
@@ -142,7 +157,7 @@ All skills expose `input_schema` and `output_schema` for automatic validation by
 - **index.html** – Entry point, loads UI assets.
 - **style.css** – Dark‑mode glass‑morphic design.
 - **app.js** – Handles scenario selection, triggers scans, receives Server‑Sent Events for live DAG updates, displays metrics and forensic replay.
-The UI shows a live graph, metrics panel, action log and replay controls.
+The UI shows a live graph, metrics panel, URL detonation results, file upload controls, action log and replay controls.
 
 ---
 

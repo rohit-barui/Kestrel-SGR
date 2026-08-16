@@ -463,3 +463,60 @@ select:focus, input:focus, textarea:focus {
   gap: 8px;
   margin-top: 8px;
 }
+
+/* Detonation Results */
+#detonationArea {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-top: 8px;
+}
+.detonation-summary {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.detonation-stat {
+  flex: 1;
+  text-align: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--panel-border);
+}
+.detonation-stat .stat-value {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+}
+.detonation-stat .stat-label {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+.detonation-stat.malicious .stat-value { color: var(--accent-rose); }
+.detonation-stat.suspicious .stat-value { color: var(--accent-amber); }
+.detonation-stat.safe .stat-value { color: var(--accent-emerald); }
+.detonation-url {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.15);
+  border-left: 3px solid var(--panel-border);
+  font-size: 10px;
+  word-break: break-all;
+}
+.detonation-url.malicious { border-left-color: var(--accent-rose); }
+.detonation-url.suspicious { border-left-color: var(--accent-amber); }
+.detonation-url.safe { border-left-color: var(--accent-emerald); }
+.detonation-url .url-domain { color: var(--text); font-weight: 600; }
+.detonation-url .url-reasons { color: var(--text-dim); font-size: 9px; margin-top: 2px; }
+.detonation-link {
+  color: var(--accent-cyan);
+  text-decoration: none;
+  font-size: 10px;
+}
+.detonation-link:hover { text-decoration: underline; }

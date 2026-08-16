@@ -62,7 +62,8 @@ const GRAPH_NODES = [
   { id: "detect_typo_squatting", plane: "perception", label: "Typo Detect", deps: ["extract_urls"] },
   { id: "extract_entities", plane: "perception", label: "Entities", deps: ["ingest"] },
   { id: "validate_spf_dkim", plane: "perception", label: "SPF/DKIM", deps: ["ingest"] },
-  { id: "aggregate_risk", plane: "decision", label: "Risk Score", deps: ["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting"] },
+  { id: "detonate_urls", plane: "perception", label: "Detonate", deps: ["extract_urls"] },
+  { id: "aggregate_risk", plane: "decision", label: "Risk Score", deps: ["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "detonate_urls"] },
   { id: "apply_veto", plane: "decision", label: "Veto", deps: ["aggregate_risk"] },
   { id: "recommend_actions", plane: "decision", label: "Actions", deps: ["apply_veto"] },
   { id: "deploy_honey_credentials", plane: "dominance", label: "Honey Creds", deps: ["recommend_actions", "apply_veto"] },
@@ -96,6 +97,7 @@ const policyStatusEl = document.getElementById("policyStatus");
 const mlConfidenceEl = document.getElementById("mlConfidence");
 const actionsEl = document.getElementById("actions");
 const logEntries = document.getElementById("logEntries");
+const detonationArea = document.getElementById("detonationArea");
 const replayBtn = document.getElementById("replayBtn");
 const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
@@ -223,6 +225,112 @@ async function performCustomScan(payload) {
     statusBadge.textContent = "Error";
     statusBadge.style.background = "var(--accent-rose)";
   }
+}
+
+// URL / Domain Detonation
+document.getElementById("runUrlScanBtn").addEventListener("click", runUrlDetonation);
+
+async function runUrlDetonation() {
+  const input = document.getElementById("urlDomainInput");
+  const raw = input.value.trim();
+  if (!raw) {
+    log("Please enter URLs or domains to detonate.", "error");
+    return;
+  }
+  const items = raw.split(",").map(s => s.trim()).filter(Boolean);
+  log(`Submitting ${items.length} URLs/domains for detonation...`, "info");
+  statusBadge.textContent = "Detonating";
+  statusBadge.style.background = "var(--accent-amber)";
+  try {
+    const res = await apiFetch("/api/detonate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls: items }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      log(`Detonation error: ${data.error}`, "error");
+      statusBadge.textContent = "Error";
+      statusBadge.style.background = "var(--accent-rose)";
+    } else {
+      renderDetonationResults(data);
+      log(`Detonation complete: ${data.malicious_count} malicious, ${data.suspicious_count} suspicious, ${data.safe_count} safe`, data.malicious_count > 0 ? "error" : data.suspicious_count > 0 ? "action" : "success");
+      statusBadge.textContent = data.malicious_count > 0 ? "Threats Found" : "Clean";
+      statusBadge.style.background = data.malicious_count > 0 ? "var(--accent-rose)" : data.suspicious_count > 0 ? "var(--accent-amber)" : "var(--accent-emerald)";
+    }
+  } catch (e) {
+    log(`Detonation request failed: ${e.message}`, "error");
+    statusBadge.textContent = "Error";
+    statusBadge.style.background = "var(--accent-rose)";
+  }
+}
+
+// File Upload Scan
+document.getElementById("runFileUploadBtn").addEventListener("click", runFileUploadScan);
+
+async function runFileUploadScan() {
+  const fileInput = document.getElementById("fileUploadInput");
+  const file = fileInput.files[0];
+  if (!file) {
+    log("Please select a file to upload.", "error");
+    return;
+  }
+  log(`Uploading ${file.name} for analysis...`, "info");
+  statusBadge.textContent = "Uploading";
+  statusBadge.style.background = "var(--accent-cyan)";
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch("/api/scan/upload", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiToken}` },
+      body: formData,
+    });
+    const result = await res.json();
+    if (result.error) {
+      log(`Upload error: ${result.error}`, "error");
+      statusBadge.textContent = "Error";
+      statusBadge.style.background = "var(--accent-rose)";
+    } else {
+      log(`File uploaded: ${file.name}. Scan submitted as ${result.scan_id}`, "success");
+      statusBadge.textContent = "Submitted";
+      statusBadge.style.background = "var(--accent-emerald)";
+    }
+  } catch (e) {
+    log(`Upload failed: ${e.message}`, "error");
+    statusBadge.textContent = "Error";
+    statusBadge.style.background = "var(--accent-rose)";
+  }
+  fileInput.value = "";
+}
+
+function renderDetonationResults(data) {
+  if (!detonationArea) return;
+  if (!data || data.total_urls === 0) {
+    detonationArea.innerHTML = '<span style="color: var(--text-dim); font-size: 11px;">No results.</span>';
+    return;
+  }
+  let html = '<div class="detonation-summary">';
+  html += `<div class="detonation-stat malicious"><span class="stat-value">${data.malicious_count}</span><span class="stat-label">Malicious</span></div>`;
+  html += `<div class="detonation-stat suspicious"><span class="stat-value">${data.suspicious_count}</span><span class="stat-label">Suspicious</span></div>`;
+  html += `<div class="detonation-stat safe"><span class="stat-value">${data.safe_count}</span><span class="stat-label">Safe</span></div>`;
+  html += `<div class="detonation-stat"><span class="stat-value" style="color: var(--accent-cyan);">${data.aggregate_score}</span><span class="stat-label">Score</span></div>`;
+  html += '</div>';
+
+  (data.results || []).forEach(r => {
+    const cls = r.reputation;
+    html += `<div class="detonation-url ${cls}">`;
+    html += `<div><span class="url-domain">${r.domain}</span> <span style="color: var(--text-dim);">${r.score}/100</span></div>`;
+    if (r.reasons && r.reasons.length) {
+      html += `<div class="url-reasons">${r.reasons.join(", ")}</div>`;
+    }
+    if (r.detonation_links && r.detonation_links.length) {
+      html += r.detonation_links.map(l => `<a class="detonation-link" href="${l}" target="_blank">&#128279; View on CyberWatch</a>`).join("");
+    }
+    html += '</div>';
+  });
+
+  detonationArea.innerHTML = html;
 }
 
 async function runScan() {

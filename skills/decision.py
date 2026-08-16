@@ -146,36 +146,115 @@ def aggregate_risk(perception_payload: Dict[str, Any]) -> Dict[str, Any]:
     archive_pwd = perception_payload.get("extract_archive_password", {}).get("archive_password", "")
     whois = perception_payload.get("whois_lookup", {}).get("whois", {})
     typo = perception_payload.get("detect_typo_squatting", {}).get("typo_squatting", [])
+    detonation = perception_payload.get("detonate_urls", {}).get("detonation", {})
+    spf = perception_payload.get("validate_spf_dkim", {})
+    ml = perception_payload.get("ml_score", {})
+    entities = perception_payload.get("extract_entities", {})
+    enrich = perception_payload.get("enrich_external", {})
+
     score = 0
+
+    # Classic signals
     if urls:
-        score += 20 * len(urls)
+        score += 5 * len(urls)
     if qr_urls:
-        score += 15 * len(qr_urls)
+        score += 10 * len(qr_urls)
     if archive_pwd:
-        score += 10
+        score += 15
     for entry in whois.values():
         if entry.get("creation_date", "")[3] in "13579":
-            score += 10
+            score += 5
     if typo:
-        score += 25 * len(typo)
+        score += 15 * len(typo)
+
+    # Detonation-based risk scoring
+    det_results = detonation.get("results", [])
+    for r in det_results:
+        rep = r.get("reputation", "unknown")
+        if rep == "malicious":
+            score += 35
+        elif rep == "suspicious":
+            score += 20
+        score += r.get("score", 0) // 5
+
+    # SPF/DKIM authentication
+    if spf.get("is_spoofed"):
+        score += 30
+    if spf.get("spf_result") == "fail":
+        score += 15
+    if spf.get("dkim_result") == "fail":
+        score += 10
+    if spf.get("dmarc_result") == "fail":
+        score += 10
+
+    # ML model score
+    ml_risk = ml.get("ml_risk_score", 0)
+    if ml_risk:
+        score += ml_risk // 2
+
+    # Entity extraction — bulk harvesting signal
+    entity_count = entities.get("entities_extracted", 0)
+    if entity_count > 10:
+        score += 15
+    elif entity_count > 5:
+        score += 8
+
+    # External URL analysis
+    for entry in enrich.get("url_analysis", []):
+        score += entry.get("suspicion_score", 0) // 4
+
     risk_score = min(score, 100)
     return {"output": {"risk_score": risk_score}, "confidence": _default_confidence()}
 
 
 def apply_veto(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
     risk = decision_payload.get("aggregate_risk", {}).get("risk_score", 0)
-    confidence = 100 if risk >= 70 else 50
+    spf = decision_payload.get("validate_spf_dkim", {})
+    detonation = decision_payload.get("detonate_urls", {}).get("detonation", {})
+    ml = decision_payload.get("ml_score", {})
+
+    overridden = False
+
+    # Hard veto conditions — these override the risk score entirely
+    if spf.get("is_spoofed"):
+        risk = max(risk, 90)
+        overridden = True
+    if detonation.get("malicious_count", 0) > 0:
+        risk = max(risk, 85)
+        overridden = True
+    if ml.get("ml_risk_score", 0) >= 80:
+        risk = max(risk, 80)
+        overridden = True
+
+    confidence = 95 if overridden else (100 if risk >= 70 else 50)
+
     return {"output": {"risk_score": risk, "final_confidence": confidence}, "confidence": confidence}
 
 
 def recommend_actions(decision_payload: Dict[str, Any]) -> Dict[str, Any]:
     risk = decision_payload.get("apply_veto", {}).get("risk_score", 0)
-    if risk <= 30:
-        actions = ["allow"]
-    elif risk <= 70:
-        actions = ["quarantine"]
-    else:
+    confidence = decision_payload.get("apply_veto", {}).get("final_confidence", 50)
+    spf = decision_payload.get("validate_spf_dkim", {})
+    detonation = decision_payload.get("detonate_urls", {}).get("detonation", {})
+    ml = decision_payload.get("ml_score", {})
+
+    if spf.get("is_spoofed") or detonation.get("malicious_count", 0) > 0:
+        actions = ["block", "alert_admin"]
+    elif ml.get("ml_risk_score", 0) >= 80:
         actions = ["block"]
+    elif risk >= 70:
+        actions = ["block"]
+    elif risk >= 30:
+        if confidence < 60:
+            actions = ["quarantine", "review"]
+        else:
+            actions = ["quarantine"]
+    else:
+        if confidence >= 80:
+            actions = ["allow"]
+        else:
+            actions = ["allow", "monitor"]
+
     return {"output": {"actions": actions}, "confidence": _default_confidence()}
 
 def validate_spf_dkim(payload: Dict[str, Any]) -> Dict[str, Any]:

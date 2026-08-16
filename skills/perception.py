@@ -251,6 +251,13 @@ def ingest_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"output": {"type": "sms", "content": entry["sms"]}, "confidence": _default_confidence()}
     if "voice" in entry:
         return {"output": {"type": "voice", "content": entry["voice"]}, "confidence": _default_confidence()}
+    # Direct URL/domain investigation — wrap as email text
+    if "urls" in entry:
+        url_text = entry["urls"]
+        if isinstance(url_text, list):
+            url_text = "\n".join(url_text)
+        content = f"Subject: URL Investigation\n\n{url_text}"
+        return {"output": {"type": "email", "content": content}, "confidence": _default_confidence()}
     raise ValueError("Unsupported payload type for ingestion")
 
 

@@ -145,16 +145,19 @@ class ReplayStore:
         actions_count = {}
 
         for row in rows:
-            decrypted = self._fernet.decrypt(row[0].encode()).decode()
-            trace = json.loads(decrypted)
-            risks.append(trace.get("risk_score", 0))
-            confs.append(trace.get("confidence", 0))
-            if trace.get("decision") == "ALLOW":
-                allows += 1
-            else:
-                denies += 1
-            for action in trace.get("actions", []):
-                actions_count[action] = actions_count.get(action, 0) + 1
+            try:
+                decrypted = self._fernet.decrypt(row[0].encode()).decode()
+                trace = json.loads(decrypted)
+                risks.append(trace.get("risk_score", 0))
+                confs.append(trace.get("confidence", 0))
+                if trace.get("decision") == "ALLOW":
+                    allows += 1
+                else:
+                    denies += 1
+                for action in trace.get("actions", []):
+                    actions_count[action] = actions_count.get(action, 0) + 1
+            except Exception:
+                continue
 
         return {
             "total_scans": total,
