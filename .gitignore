@@ -8,6 +8,10 @@ coverage.xml
 server.log
 server_error.log
 apcs_tokens.json
+dist/
+*.egg-info/
+build/
+*.egg
 
 # Stale nested repositories (accidentally committed as gitlinks)
 Kestrel-SGR/
