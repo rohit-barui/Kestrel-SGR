@@ -1,50 +1,52 @@
-# Autonomous Phishing Control System (APCS)
+# Kestrel-SGR — Autonomous Phishing Control System
 
-**APCS** is a deterministic, multi‑plane security control system that detects, analyzes, predicts, and actively neutralises social‑engineering threats (phishing, smishing, vishing) across enterprise environments.
+Welcome to the Kestrel-SGR documentation hub.
 
-## Features
-- **Skill Graph Runtime (SGR)** – DAG executor with schema validation and confidence aggregation.
-- **Lightweight Rego policy engine** – Python‑based OPA evaluator.
-- **Perception plane** – Email/SMS/voice ingestion, QR‑code scanning, archive‑password extraction, WHOIS caching, typo‑squatting detection.
-- **Decision plane** – Weighted risk scoring, veto/override logic, action recommendation.
-- **Dominance plane** – Active honey credentials, deception payloads, link rewriting, containment actions.
-- **Dashboard** – Glass‑morphic web UI to run preset threat scenarios, visualise the skill graph and view forensics.
-- **Transaction saga & gateway** – Automatic rollback of side‑effects on failure.
+## Quick Start
 
-## Quick Start – One‑Click Install
 ```powershell
-# 1️⃣ Clone the repo (skip if already present)
-git clone https://github.com/your-org/Kestrel-SGR.git
-cd Kestrel-SGR
-
-# 2️⃣ Run the installer script (creates venv, installs deps, starts server)
 .\Kestrel-sgr.ps1
+# Opens http://localhost:9090
 ```
-The script:
-- Creates a virtual environment (`.venv`)
-- Installs `requirements.txt`
-- Launches `python server.py`
-- Opens the dashboard automatically in the default browser (`http://localhost:9090`)
-
-## API Endpoints
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/scan` | Run the SGR graph on a supplied payload (email, SMS, voice transcript). |
-| `GET`  | `/api/scenarios` | List preset threat scenarios (CEO fraud, credential harvester, malware drop, clean alert). |
-| `GET`  | `/api/policies` | Retrieve current Rego policies. |
-| `PUT`  | `/api/policies` | Update Rego policies (JSON body with `policy` field). |
 
 ## Documentation
-- [Architecture Overview](ARCHITECTURE.md)
-- [Repository Structure](REPOSITORY_STRUCTURE.md)
-- [Core Package](CORE.md)
-- [Skills Package](SKILLS.md)
-- [Policy Files](POLICIES.md)
-- [Web UI Guide](WEB_UI.md)
-- [Usage Walk‑through](USAGE.md)
-- [Testing](TESTING.md)
-- [Contributing](CONTRIBUTING.md)
-- [Change Log](CHANGELOG.md)
+
+- [Architecture Overview](ARCHITECTURE.md) — System design, HLD, LLD, data flow
+- [Repository Structure](REPOSITORY_STRUCTURE.md) — Complete file and directory reference
+- [Core Package](CORE.md) — engine.py, policy.py, gateway.py, detonation.py, replay.py, and more
+- [Skills Package](SKILLS.md) — All 19 DAG nodes, risk scoring formulas, action selection
+- [Policy Files](POLICIES.md) — Rego rules, policy input contract, API management
+- [Web UI Guide](WEB_UI.md) — Dashboard features, D3 graph, SSE event flow
+- [Usage Walkthrough](USAGE.md) — Complete guide with API examples and troubleshooting
+- [Testing](TESTING.md) — 303 test suite, coverage requirements, writing tests
+- [Contributing](CONTRIBUTING.md) — Workflow, code style, PR checklist
+- [Change Log](CHANGELOG.md) — Version history and release notes
+- [Development Plan](DEVELOPMENT_PLAN.md) — Phased roadmap and process rules
+
+## API at a Glance
+
+```bash
+# Health check
+curl http://localhost:9090/api/health
+
+# Scan an email
+curl -X POST http://localhost:9090/api/scan \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "From: spoofed@evil.com\nSubject: Urgent\n\nClick https://phish.xyz"}'
+
+# Detonate URLs
+curl -X POST http://localhost:9090/api/detonate \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://phish.xyz", "https://company.com"]}'
+
+# Upload file
+curl -X POST http://localhost:9090/api/scan/upload \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@suspicious_email.eml"
+```
 
 ## License
-This project is licensed under the terms of the `LICENSE` file.
+
+MIT — see `LICENSE` for details.

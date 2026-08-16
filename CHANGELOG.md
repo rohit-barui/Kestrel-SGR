@@ -5,13 +5,17 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 ## [Unreleased]
 
 ### Added
-- **Premium Glassmorphism UI** (`web/style.css`, `web/index.html`) – Replaced the legacy dashboard with a modern, tabbed layout, neon accents, and responsive metrics.
-- **Settings & Integrations Dashboard** (`web/app.js`, `server.py`) – Frontend UI for dynamic SIEM connector configurations (Splunk, Sentinel) securely stored in the Vault.
-- **SOAR Adapter Architecture** (`core/remediation.py`) – Vendor-agnostic execution framework for playbook actions.
-- **SOAR Endpoints & UI** – New `/api/action` endpoint. Dashboard recommendations converted into functional playbook execution buttons.
-- **PII Redaction Enforcement** – The `/api/scan` endpoint natively intercepts and redacts PII before external analysis.
-- **Escalation Protocols** – Overriding PII warnings directly fires SIEM logs and Admin DL alerts.
-- **Quality Analytics** – "Mark as False Positive" feedback loop UI and `/api/analytics/quality` endpoint.
+- **URL Detonation Engine** (`core/detonation.py`) — Multi-link reputation analysis with CyberWatch API integration and local heuristics (domain length, keywords, IP-based, URL shorteners, HTTPS status). Returns per-URL malicious/suspicious/safe classification with confidence scores and CyberWatch detonation links.
+- **File Upload Scanning** (`server.py`, `web/index.html`, `web/app.js`) — Upload `.eml`/`.txt`/`.msg`/`.html` files via `POST /api/scan/upload` (multipart/form-data). Content is extracted and passed through the full SGR pipeline.
+- **URL/domain Investigation** (`web/index.html`, `web/app.js`) — Dedicated input field to submit URLs or domains for instant reputation analysis via `POST /api/detonate`. Results displayed as color-coded stats cards with per-URL breakdown.
+- **Detonate Node in DAG** — `detonate_urls` skill added to the SGR graph, depends on `extract_urls`, feeds into `aggregate_risk` and `ml_score`.
+- **Multi-Signal Risk Scoring** (`skills/decision.py`) — `aggregate_risk` now consumes: `ml_score` (ML risk score blended in), `validate_spf_dkim` (spoof flag +30, SPF/DKIM/DMARC fails +10-15 each), `extract_entities` (bulk entity count +8/+15), `enrich_external` (URL suspicion scores).
+- **Veto Overrides** (`skills/decision.py`) — `apply_veto` now hard-overrides risk to 85+ on `is_spoofed=True`, `malicious_count>0`, or `ml_risk_score>=80`. Confidence set to 95 on override.
+- **Context-Aware Actions** (`skills/decision.py`) — `recommend_actions` returns `["block", "alert_admin"]` on spoof/detonation threats, `["quarantine", "review"]` at moderate risk with low confidence, `["allow", "monitor"]` at low risk with low confidence.
+- **Expanded Rego Policy** (`policies/remediation.rego`) — Policy now evaluates `is_spoofed`, `malicious_count`, `suspicious_count`, `ml_risk_score`, `ml_confidence`, `spf_result`, `dmarc_result` alongside classic signals.
+- **Comprehensive Documentation** (`docs/`) — Added `CORE.md`, `SKILLS.md`, `POLICIES.md`, `WEB_UI.md`, `USAGE.md`, `TESTING.md`, `CONTRIBUTING.md`, `REPOSITORY_STRUCTURE.md`. Updated `ARCHITECTURE.md`, `HLD.md`, `LLD.md`, `README.md`, `docs/README.md`.
+- **Detonation Results in Dashboard** (`web/style.css`, `web/app.js`) — New detonation panel with malicious/suspicious/safe stat counters, per-URL reputation with color-coded borders, and CyberWatch result links.
+- **`urls` field support** (`server.py`, `skills/perception.py`) — `POST /api/scan` now accepts `{"urls": [...]}` payload for direct URL investigations that route through the full DAG pipeline.
 
 ### Fixed
 - **SSE Real-time Connections** – Fixed bug where browser `EventSource` failed to connect due to missing API token; API updated to support `token=` URL parameter.
@@ -20,9 +24,15 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 - **Encryption Crash** – Fixed fatal JSON decode error in `core/replay.py` `risk_trend()` method where encrypted data was not decrypted before parsing.
 - **Duplicate Backend Code** – Resolved duplicate HTTP handlers in `server.py` for config PUT endpoints.
 - **Duplicate import** – Removed redundant `from core.notifications import notifier` inside conditional block in `server.py`.
+- **Fernet Decrypt Crash** – `core/replay.py` `stats()` now wraps decrypt in try/except to handle stale encryption keys gracefully.
+- **Rego Policy Inversion** – Fixed `policies/remediation.rego` where `allow` rules had inverted logic (allowed high risk). Rewritten to properly deny high-risk threats.
+- **Increased Scan Body Limit** – Raised from 10,000 to 500,000 characters to support uploaded file content.
 
-### Housekeeping
-- **Branch cleanup** – Verified all feature branches (`feature/ml-models`, `feature/ui-ml-display`, `feature/phase4-siem-alerting`, `feature/production-hardening-ci`, `task/setup-hard-coded-workflow`, `feature/alerts-export-auth`, `feature/apcs-3-decision`) are fully merged into `main`; stale branches deleted locally and remotely.
+### Changed
+- **Risk Scoring Weights** (`skills/decision.py`) — Rebalanced all signal weights: reduced per-URL base from +20 to +5, archive password from +10 to +15, typo from +25 to +15, WHOIS odd year from +10 to +5. Added detonation reputation scores (+35 malicious, +20 suspicious), SPF/DKIM/DMARC authentication scores, ML score blending, entity count scores, and URL suspicion scores.
+- **Scan Body Validation** (`server.py`) — Now accepts `urls` field in addition to `email`, `sms`, `voice`.
+- **Policy Input Contract** (`server.py`) — Expanded from 5 fields to 12 fields sent to Rego evaluator.
+- **Drift Tracking Thresholds** (`server.py`) — Adjusted FP threshold from <30 to <20, FN threshold from >70 to >60.
 
 
 - **Celery integration** (`core/celery_app.py`, `core/tasks.py`) – Celery app with in-memory broker/backend; `run_skill` task wrapper that resolves skill functions from a global registry.

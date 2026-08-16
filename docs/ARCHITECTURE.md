@@ -1,59 +1,77 @@
-**Installation** – Run `Kestrel-sgr.ps1` (one‑click) to set up the virtual environment, install dependencies, and start the server.
+# Architecture Overview
 
+## High-Level Design (HLD)
 
+Kestrel-SGR is a modular Security Governance Runtime that ingests email payloads, enriches them, scores risk, decides action, and optionally escalates to external SIEMs.
 
+**Four Planes:**
+1. **Perception** — ingestion & enrichment (URL extraction, QR scan, WHOIS, DNS, typo-squatting, archive password, entity extraction, URL detonation, SPF/DKIM validation)
+2. **Decision** — risk aggregation, veto, action recommendation
+3. **Dominance** — containment (IP block, quarantine, honey-creds, link rewrite, MFA reset)
+4. **Policy Integration** — Rego policies governing allow/deny decisions
 
+**Core Services:**
+- REST API (`server.py`) — scan, detonate, upload, policy, integrations, replay, health, SSE
+- SIEM connectors (`core/siem_connectors.py`) — Splunk, Elastic
+- Forensic replay (`core/replay.py`) — encrypted trace store
+- Authentication (`core/auth.py`) — token-based RBAC
+- Secrets management (`core/vault.py`) — encrypted JSON backend
 
-APCS is composed of three logical planes that communicate through a **Skill Graph Runtime (SGR)**.  The runtime executes a directed‑acyclic graph (DAG) of **skill** nodes, validates input/output schemas, aggregates confidence scores and finally triggers remediation actions.
+## Low-Level Design (LLD)
+
+### Core Components
+
+- **engine.py** — DAG executor with schema validation, confidence aggregation, error handling
+- **policy.py** — Lightweight Rego compiler/interpreter (subset of OPA Rego)
+- **gateway.py** — Saga pattern: records side-effects, rolls back on failure
+- **detonation.py** — URL reputation engine (CyberWatch API + local heuristics)
+- **replay.py** — Encrypted SQLite store with Fernet encryption and background purge
+- **auth.py** — Token manager with role-based access (Analyst, Admin)
+- **vault.py** — Secrets manager with JSON file backend (pluggable for Azure/HashiCorp/AWS)
+
+### Data Flow
 
 ```
-┌─────────────────────┐   ┌─────────────────────┐   �┌─────────────────────┐
-│   Perception Plane  │   │   Decision Plane    │   │   Dominance Plane   │
-│  (Ingestion, parse, │   │ (Risk scoring,      │   │ (Deception,         │
-│   enrichment)       │   │  policy evaluation) │   │  containment)       │
-└───────┬─────────────┘   └───────┬─────────────┘   └───────┬─────────────┘
-        │                         │                         │
-        └───────► SGR ◄───────────┘                         │
-                     │                                 │
-                     ▼                                 ▼
-               ┌─────────────────┐               ┌─────────────────┐
-               │   Core Package  │               │   Web Dashboard │
-               │ (engine, policy,│               │ (HTML/JS/CSS)   │
-               │  gateway, etc) │               └─────────────────┘
-               └─────────────────┘
+Raw Payload → Perception Plane → Decision Plane → Dominance Plane → Action
+                  │                     │                │
+                  ▼                     ▼                ▼
+            URL Extraction         Risk Scoring    IP Block / Quarantine
+            WHOIS/DNS Enrich       Veto Override   Link Rewrite
+            Detonation             Policy Eval     MFA Reset
+            SPF/DKIM Validation    Action Reco     Honey Creds
 ```
 
-## Core Components
-- **engine.py** – Executes the DAG, enforces schemas, aggregates confidence, and propagates state.
-- **policy.py** – Lightweight Rego compiler/interpreter; evaluates `.rego` files against the decision payload.
-- **gateway.py** – Implements the saga pattern. Every side‑effect (IP block, quarantine, credential provisioning) is logged; on abort the actions are rolled back in reverse order.
-- **graph.py** – Identity graph holding entities (users, devices, IPs) and relationships.
-- **reasoning.py** – Multi‑model consensus (heuristic + LLM) to boost decision accuracy.
-- **drift.py** – Tracks false‑positive/false‑negative feedback for model adaptation.
-- **replay.py** – Stores execution traces for forensics and replay.
-- **red_team.py** – Generates synthetic adversarial payloads for robustness testing.
+1. **Ingestion** — `perception.py` reads raw payloads (email/SMS/voice/URLs), extracts artifacts
+2. **Enrichment** — External lookups (DNS, WHOIS, CyberWatch) with caching
+3. **Detonation** — URL reputation analysis with per-URL classification
+4. **Decision** — `decision.py` builds risk vector from 15+ signals, applies veto, calls Rego policy
+5. **Remediation** — `dominance.py` performs containment actions via saga gateway
+6. **Audit** — All events recorded in encrypted replay store; SSE broadcasts for live dashboard
 
-## Data Flow
-1. **Ingestion** – `perception.py` reads raw payloads, extracts URLs, QR codes, passwords, WHOIS data, etc.
-2. **Enrichment** – External lookups (DNS, WHOIS, certificate transparency) are cached to avoid rate limits.
-3. **Decision** – `decision.py` builds a risk vector, applies veto overrides, and calls `policy.py` for OPA‑based remediation rules.
-4. **Remediation** – `dominance.py` performs containment actions (honey‑cred deployment, link rewriting, session lockout).
-5. **Audit & Rollback** – All side‑effects are recorded in the gateway; if any step fails, the saga rolls back.
+### Persistence
 
-## High‑Level Design (HLD)
-- **Modular** – Each plane lives in its own Python package under `skills/` and communicates only via typed JSON contracts.
-- **Extensible** – New skills can be added without touching the core runtime; the engine discovers them via entry‑points.
-- **Fault‑tolerant** – Gateway ensures state consistency even when external services (WHOIS, DNS) fail.
-- **Observability** – `replay.py` stores a full execution log; the dashboard visualises it in real time.
+| Store | File | Encryption | Purpose |
+|-------|------|-----------|---------|
+| Secrets Vault | `data/secrets.json` | No (file perms) | API keys, webhook URLs |
+| Replay DB | `data/replay.db` | Fernet (AES-128) | Scan traces for forensics |
+| WHOIS Cache | `data/whois_cache.db` | Fernet (AES-128) | Cached WHOIS lookups |
 
-## Low‑Level Design (LLD)
-- **Skill schema** – Defined as a JSON‑Schema object (`input_schema`, `output_schema`). The engine validates each node before execution.
-- **Confidence aggregation** – Weighted average of skill confidences; veto overrides set final confidence to 100.
-- **Saga log format** – JSON array `[ {"action":"block_ip","params":{...}}, … ]`. Rollback functions are registered per action.
-- **Cache layer** – Simple on‑disk SQLite DB used by `perception.py` for WHOIS and DNS results with TTL.
-- **Policy engine** – Parses `.rego` files into an AST; each rule compiles to a Python lambda for fast evaluation.
-- **Dashboard socket** – Server pushes execution events over Server‑Sent Events (SSE) to `app.js` for live graph updates.
+### API Security
+
+- **Authentication**: Bearer token in `Authorization` header or `token=` URL parameter
+- **RBAC**: Analyst (default) and Admin roles; policy/integration endpoints require Admin
+- **Rate Limiting**: 1000 requests/min per client IP
+- **HMAC**: Optional `X-HMAC` header verification for webhook endpoints
+- **mTLS**: Optional client certificate verification via `--client-ca` flag
+
+### Deployment
+
+- **Container**: Python 3.11-slim, port 9090
+- **Reverse Proxy**: NGINX with TLS 1.2/1.3, strong ciphers
+- **Certificates**: Self-signed via `scripts/generate_cert.py` (replace with real CA in production)
+- **Persistence**: `./data` volume mounted into containers
+- **Orchestration**: Docker Compose for dev, Kubernetes-ready
 
 ---
 
-For deeper details see the individual module docs (`CORE.md`, `SKILLS.md`).
+For detailed module documentation see [CORE.md](CORE.md) and [SKILLS.md](SKILLS.md).
