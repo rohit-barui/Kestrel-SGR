@@ -2,9 +2,10 @@
 
 import email
 import re
-from typing import Dict, Any, Optional
+from typing import Any
 
-def parse_email(raw: str) -> Dict[str, Any]:
+
+def parse_email(raw: str) -> dict[str, Any]:
     """Parse RFC 822 email and extract headers/body."""
     try:
         msg = email.message_from_string(raw)
@@ -16,12 +17,13 @@ def parse_email(raw: str) -> Dict[str, Any]:
                     body = part.get_payload(decode=True).decode("utf-8", errors="replace")
                     break
         else:
-            body = msg.get_payload(decode=True).decode("utf-8", errors="replace") if msg.get_payload(decode=True) else ""
-        
+            decoded = msg.get_payload(decode=True)
+            body = decoded.decode("utf-8", errors="replace") if decoded else ""
+
         from_header = headers.get("From", "")
         subject = headers.get("Subject", "")
         spf_match = re.search(r"spf=(pass|fail|neutral)", raw, re.IGNORECASE)
-        
+
         return {
             "from": from_header,
             "subject": subject,

@@ -1,6 +1,7 @@
-import unittest
-import py_compile
 import os
+import py_compile
+import unittest
+
 
 class TestLint(unittest.TestCase):
     def test_core_modules_compile(self):

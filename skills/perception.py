@@ -13,14 +13,13 @@ Side‑effects (e.g., network calls) can be recorded as ``side_effects`` entries
 for the saga gateway, but the base implementation keeps everything pure.
 """
 
-import re
-import json
 import hashlib
-from typing import Dict, Any, List
+import re
+from typing import Any
 
-from core.graph import IdentityGraph
-from core.enricher import resolve_dns, whois_lookup_real, analyze_suspicious_urls
 from core.cache import Cache
+from core.enricher import analyze_suspicious_urls, resolve_dns, whois_lookup_real
+from core.graph import IdentityGraph
 
 # ---------------------------------------------------------------------------
 # JSON Schema constants for input/output validation
@@ -243,7 +242,7 @@ def _default_confidence() -> int:
 # Skill implementations
 # ---------------------------------------------------------------------------
 
-def ingest_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def ingest_payload(payload: dict[str, Any]) -> dict[str, Any]:
     entry = payload.get("__entry__", payload)
     if "email" in entry:
         return {"output": {"type": "email", "content": entry["email"]}, "confidence": _default_confidence()}
@@ -261,20 +260,20 @@ def ingest_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     raise ValueError("Unsupported payload type for ingestion")
 
 
-def extract_urls(payload: Dict[str, Any]) -> Dict[str, Any]:
+def extract_urls(payload: dict[str, Any]) -> dict[str, Any]:
     text = payload.get("ingest", {}).get("content", "")
     urls = re.findall(r"https?://[^\s<>\"']+", text)
     domains = list({url.split("/")[2] for url in urls if "/" in url[8:]})
     return {"output": {"urls": urls, "domains": domains}, "confidence": 90 if urls else 30}
 
 
-def scan_qr_codes(payload: Dict[str, Any]) -> Dict[str, Any]:
+def scan_qr_codes(payload: dict[str, Any]) -> dict[str, Any]:
     text = payload.get("ingest", {}).get("content", "")
     matches = re.findall(r"\[QR:(https?://[^\]]+)\]", text)
     return {"output": {"qr_urls": matches}, "confidence": 80 if matches else 20}
 
 
-def extract_archive_password(payload: Dict[str, Any]) -> Dict[str, Any]:
+def extract_archive_password(payload: dict[str, Any]) -> dict[str, Any]:
     text = payload.get("ingest", {}).get("content", "")
     m = re.search(r"(?i)password\s*[:=]\s*([\w!@#$%^&*]+)", text)
     pwd = m.group(1) if m else ""
@@ -283,7 +282,7 @@ def extract_archive_password(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 whois_cache = Cache("data/whois_cache.db")
 
-def whois_lookup(payload: Dict[str, Any]) -> Dict[str, Any]:
+def whois_lookup(payload: dict[str, Any]) -> dict[str, Any]:
     domain = payload.get("extract_urls", {}).get("domains", [])
     if not domain:
         return {"output": {"whois": {}}, "confidence": 10}
@@ -300,15 +299,15 @@ def whois_lookup(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"output": {"whois": result}, "confidence": 85}
 
 
-def enrich_dns(payload: Dict[str, Any]) -> Dict[str, Any]:
+def enrich_dns(payload: dict[str, Any]) -> dict[str, Any]:
     domains = payload.get("extract_urls", {}).get("domains", [])
-    dns_info: Dict[str, Any] = {}
+    dns_info: dict[str, Any] = {}
     for d in domains:
         dns_info[d] = {"A": ["93.184.216.34"], "AAAA": ["2606:2800:220:1:248:1893:25c8:1946"]}
     return {"output": {"dns": dns_info}, "confidence": 80}
 
 
-def detect_typo_squatting(payload: Dict[str, Any]) -> Dict[str, Any]:
+def detect_typo_squatting(payload: dict[str, Any]) -> dict[str, Any]:
     def _lev(a: str, b: str) -> int:
         if len(a) < len(b):
             return _lev(b, a)
@@ -327,7 +326,7 @@ def detect_typo_squatting(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     trusted = ["example.com", "company.com", "mycorp.io"]
     domains = payload.get("extract_urls", {}).get("domains", [])
-    suspicious: List[str] = []
+    suspicious: list[str] = []
     for d in domains:
         for t in trusted:
             if _lev(d, t) <= 2:
@@ -335,19 +334,19 @@ def detect_typo_squatting(payload: Dict[str, Any]) -> Dict[str, Any]:
                 break
     return {"output": {"typo_squatting": suspicious}, "confidence": 75 if suspicious else 20}
 
-def enrich_external(payload: Dict[str, Any]) -> Dict[str, Any]:
+def enrich_external(payload: dict[str, Any]) -> dict[str, Any]:
     """External enrichment: DNS + WHOIS + URL analysis with mock fallback."""
     domains = payload.get("extract_urls", {}).get("domains", [])
     urls = payload.get("extract_urls", {}).get("urls", [])
-    
+
     dns_results = {}
     whois_results = {}
     for d in domains:
         dns_results[d] = resolve_dns(d)
         whois_results[d] = whois_lookup_real(d)
-    
+
     url_analysis = analyze_suspicious_urls(urls)
-    
+
     return {
         "output": {
             "dns_real": dns_results,
@@ -368,6 +367,13 @@ def extract_entities(payload):
         identity_graph.add_entity(e, "email_address")
     for d in domains:
         identity_graph.add_entity(d, "domain")
-    return {"output": {"entities_extracted": len(emails) + len(domains), "emails": emails, "domains": domains}, "confidence": 80}
+    return {
+        "output": {
+            "entities_extracted": len(emails) + len(domains),
+            "emails": emails,
+            "domains": domains,
+        },
+        "confidence": 80,
+    }
 
 # End of skills/perception.py

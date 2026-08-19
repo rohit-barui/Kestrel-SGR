@@ -1,4 +1,3 @@
-import pytest
 from core.email_parser import parse_email
 
 RAW_SIMPLE = """From: alice@example.com\nSubject: Test\n\nHello World"""

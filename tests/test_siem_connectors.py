@@ -1,6 +1,8 @@
 import unittest
-from unittest.mock import patch, MagicMock
-from core.siem_connectors import SplunkConnector, ElasticConnector, send_to_siem
+from unittest.mock import MagicMock, patch
+
+from core.siem_connectors import ElasticConnector, SplunkConnector, send_to_siem
+
 
 class TestSplunkConnector(unittest.TestCase):
     def test_send_alert_success(self):

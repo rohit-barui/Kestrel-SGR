@@ -2,9 +2,6 @@
 import math
 import os
 import pickle
-from unittest.mock import patch
-
-import pytest
 
 from core import ml
 from core.ml import MLScorer, PhishingFeatureExtractor, ml_score
@@ -21,6 +18,26 @@ SAMPLE_PAYLOAD = {
     "validate_spf_dkim": {"is_spoofed": False},
     "ingest": {"content": "test email body"},
 }
+
+
+class FakeRandomForest:
+    def __init__(self, **kwargs):
+        pass
+
+    def fit(self, x, y):
+        self._x = x
+        self._y = y
+        return self
+
+    def predict(self, x):
+        return [self._y[0] for _ in x]
+
+    def predict_proba(self, x):
+        return [[0.2, 0.8] for _ in x]
+
+
+class Stub:
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +164,7 @@ class TestMLScorerModelPath:
     def test_score_uses_model_when_present(self, tmp_path):
         scorer = MLScorer()
         class FakeModel:
-            def predict_proba(self, X):
+            def predict_proba(self, x):
                 return [[0.2, 0.8]]
         scorer.model = FakeModel()
         result = scorer.score(SAMPLE_PAYLOAD)
@@ -164,8 +181,6 @@ class TestMLScorerModelPath:
                 pickle.dump(scorer.model, f)
         else:
             # sklearn unavailable; create a picklable stub
-            class Stub:
-                pass
             with open(model_path, "wb") as f:
                 pickle.dump(Stub(), f)
         monkeypatch.setattr(ml, "MODEL_PATH", model_path)
@@ -182,6 +197,9 @@ class TestMLScorerModelPath:
             f.write(b"not a pickle")
         monkeypatch.setattr(ml, "MODEL_PATH", model_path)
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 1.0)
         scorer = MLScorer()
         # Corrupt model is ignored; a fresh model is trained
         assert scorer.model is not None
@@ -190,24 +208,29 @@ class TestMLScorerModelPath:
         model_path = str(tmp_path / "trained.pkl")
         monkeypatch.setattr(ml, "MODEL_PATH", model_path)
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 1.0)
         scorer = MLScorer()
         assert scorer.model is not None
         assert os.path.exists(model_path)
 
     def test_synthetic_dataset_shapes(self):
         scorer = MLScorer()
-        X, y = scorer._synthetic_dataset()
-        assert len(X) == 3
+        x, y = scorer._synthetic_dataset()
+        assert len(x) == 3
         assert len(y) == 3
-        assert all(len(row) == 11 for row in X)
+        assert all(len(row) == 11 for row in x)
         assert y == [0, 1, 0]
 
     def test_train_and_save_accuracy_fallback(self, monkeypatch, tmp_path):
         # Force poor model so the <0.8 accuracy branch returns None
         monkeypatch.setattr(ml, "MODEL_PATH", str(tmp_path / "bad.pkl"))
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 1.0)
         scorer = MLScorer()
-        orig_train = scorer._train_and_save
 
         def bad_train():
             scorer.model = None
@@ -219,9 +242,11 @@ class TestMLScorerModelPath:
         # Patch accuracy_score to force the fallback branch inside _train_and_save
         monkeypatch.setattr(ml, "MODEL_PATH", str(tmp_path / "lowacc.pkl"))
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 0.5)
         scorer = MLScorer()
         scorer.model = None
-        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 0.5)
         scorer._train_and_save()
         assert scorer.model is None
 

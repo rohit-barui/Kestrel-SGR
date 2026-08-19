@@ -1,4 +1,5 @@
 import unittest
+
 from skills.decision import (
     aggregate_risk,
     apply_veto,
@@ -77,11 +78,99 @@ class TestDecision(unittest.TestCase):
         result = aggregate_risk(payload)
         self.assertEqual(result["output"]["risk_score"], 100)
 
-    def test_apply_veto_below_threshold(self):
-        payload = {"aggregate_risk": {"risk_score": 30}}
-        result = apply_veto(payload)
+    def test_aggregate_risk_suspicious_detonation(self):
+        payload = {"detonate_urls": {"detonation": {"results": [{"reputation": "suspicious", "score": 50}]}}}
+        result = aggregate_risk(payload)
         self.assertEqual(result["output"]["risk_score"], 30)
-        self.assertEqual(result["confidence"], 50)
+
+    def test_aggregate_risk_ip_rep_malicious(self):
+        payload = {
+            "check_ip_reputation": {
+                "ip_reputation": {"1.2.3.4": {"malicious": True, "checks": {"vt": {"reputation": "safe"}}}}
+            }
+        }
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 25)
+
+    def test_aggregate_risk_ip_rep_suspicious_check(self):
+        payload = {
+            "check_ip_reputation": {
+                "ip_reputation": {"1.2.3.4": {"malicious": False, "checks": {"vt": {"reputation": "suspicious"}}}}
+            }
+        }
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 15)
+
+    def test_aggregate_risk_file_rep_malicious(self):
+        payload = {"check_file_reputation": {"file_reputation": {"malicious": True}}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 35)
+
+    def test_aggregate_risk_file_rep_suspicious(self):
+        payload = {"check_file_reputation": {"suspicious_count": 2}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 20)
+
+    def test_aggregate_risk_owasp(self):
+        payload = {"owasp_analysis": {"risk_score": 60}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 30)
+
+    def test_aggregate_risk_phishing_signals(self):
+        payload = {"phishing_validation": {"phishing_signals": {"brand_impersonation": True, "missing_ssl": True, "header_mismatch": True}}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 55)
+
+    def test_aggregate_risk_threat_intel(self):
+        payload = {"threat_intel_lookup": {"threat_intel": [{"type": "url"}, {"type": "domain"}]}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 60)
+
+    def test_aggregate_risk_entities_medium(self):
+        payload = {"extract_entities": {"entities_extracted": 6}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 8)
+
+    def test_aggregate_risk_owasp_zero_no_op(self):
+        payload = {"owasp_analysis": {"risk_score": 0}}
+        result = aggregate_risk(payload)
+        self.assertEqual(result["output"]["risk_score"], 0)
+
+    def test_apply_veto_ml_high(self):
+        payload = {"aggregate_risk": {"risk_score": 20}, "ml_score": {"ml_risk_score": 85}}
+        result = apply_veto(payload)
+        self.assertEqual(result["output"]["risk_score"], 80)
+        self.assertEqual(result["confidence"], 95)
+
+    def test_apply_veto_ip_rep_malicious(self):
+        payload = {"aggregate_risk": {"risk_score": 20}, "check_ip_reputation": {"ip_reputation": {"1.1.1.1": {"malicious": True}}}}
+        result = apply_veto(payload)
+        self.assertEqual(result["output"]["risk_score"], 80)
+
+    def test_apply_veto_file_rep_malicious(self):
+        payload = {"aggregate_risk": {"risk_score": 20}, "check_file_reputation": {"file_reputation": {"malicious": True}}}
+        result = apply_veto(payload)
+        self.assertEqual(result["output"]["risk_score"], 85)
+
+    def test_apply_veto_threat_intel_two_iocs(self):
+        payload = {"aggregate_risk": {"risk_score": 20}, "threat_intel_lookup": {"threat_intel": [{"type": "url"}, {"type": "domain"}]}}
+        result = apply_veto(payload)
+        self.assertEqual(result["output"]["risk_score"], 85)
+
+    def test_apply_veto_phishing_likely(self):
+        payload = {"aggregate_risk": {"risk_score": 20}, "phishing_validation": {"phishing_likely": True}}
+        result = apply_veto(payload)
+        self.assertEqual(result["output"]["risk_score"], 75)
+
+    def test_recommend_actions_ml_high_block(self):
+        payload = {"apply_veto": {"risk_score": 20, "final_confidence": 50}, "ml_score": {"ml_risk_score": 90}}
+        result = recommend_actions(payload)
+        self.assertEqual(result["output"]["actions"], ["block"])
+
+    def test_apply_veto_no_override_below_70_keeps_confidence_100(self):
+        payload = {"aggregate_risk": {"risk_score": 75}}
+        result = apply_veto(payload)
+        self.assertEqual(result["confidence"], 100)
 
     def test_apply_veto_above_threshold(self):
         payload = {"aggregate_risk": {"risk_score": 85}}

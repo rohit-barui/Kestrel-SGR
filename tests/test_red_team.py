@@ -1,8 +1,7 @@
 import unittest
-from core.red_team import (
-    generate_ceo_fraud, generate_credential_harvester,
-    generate_malware_drop, generate_all
-)
+
+from core.red_team import generate_all, generate_ceo_fraud, generate_credential_harvester, generate_malware_drop
+
 
 class TestRedTeam(unittest.TestCase):
     def test_ceo_fraud_has_email(self):

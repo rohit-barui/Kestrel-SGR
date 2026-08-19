@@ -1,5 +1,7 @@
 import unittest
+
 from core.privacy import redact_pii
+
 
 class TestPrivacy(unittest.TestCase):
     def test_redact_ssn(self):

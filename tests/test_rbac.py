@@ -1,10 +1,12 @@
-import unittest
 import json
-from core.auth import AuthManager
-from server import APIHandler, ThreadedHTTPServer, PORT
 import threading
 import time
+import unittest
 import urllib.request
+
+from core.auth import AuthManager
+from server import PORT, APIHandler, ThreadedHTTPServer
+
 
 class TestRBAC(unittest.TestCase):
     @classmethod

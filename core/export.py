@@ -1,12 +1,12 @@
 """Data export utilities for APCS."""
 
 import csv
-import json
 import io
-from typing import Dict, Any, List
+import json
+from typing import Any
 
 
-def export_csv(traces: List[Dict[str, Any]]) -> str:
+def export_csv(traces: list[dict[str, Any]]) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Scan ID", "Timestamp", "Risk Score", "Confidence", "Decision", "Actions"])
@@ -22,11 +22,11 @@ def export_csv(traces: List[Dict[str, Any]]) -> str:
     return output.getvalue()
 
 
-def export_json_report(trace: Dict[str, Any]) -> str:
+def export_json_report(trace: dict[str, Any]) -> str:
     return json.dumps(trace, indent=2)
 
 
-def generate_summary_report(stats: Dict[str, Any], trend: List[Dict[str, Any]]) -> str:
+def generate_summary_report(stats: dict[str, Any], trend: list[dict[str, Any]]) -> str:
     lines = []
     lines.append("APCS Summary Report")
     lines.append("=" * 40)

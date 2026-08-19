@@ -1,11 +1,13 @@
+import base64
+import hashlib
 import json
-import time
 import os
 import threading
-import hashlib
-import base64
-from typing import Dict, Any, List, Optional
+import time
+from typing import Any
+
 from cryptography.fernet import Fernet
+
 from .db import get_encrypted_conn
 from .vault import ensure_secret
 
@@ -39,8 +41,8 @@ class ReplayStore:
         self._purge_thread.start()
 
 
-    def store(self, scan_id: str, entry_payload: Dict[str, Any], node_outputs: Dict[str, Any],
-              final_decision: str, risk_score: float, confidence: float, actions: List[str]):
+    def store(self, scan_id: str, entry_payload: dict[str, Any], node_outputs: dict[str, Any],
+              final_decision: str, risk_score: float, confidence: float, actions: list[str]):
         trace_data = {
             "scan_id": scan_id,
             "input": entry_payload,
@@ -60,7 +62,7 @@ class ReplayStore:
             )
             self.conn.commit()
 
-    def add_event(self, scan_id: str, node: str, output: Dict[str, Any], confidence: float):
+    def add_event(self, scan_id: str, node: str, output: dict[str, Any], confidence: float):
         with self.lock:
             row = self.conn.execute(
                 "SELECT 1 FROM replay_traces WHERE scan_id = ?", (scan_id,)
@@ -86,7 +88,7 @@ class ReplayStore:
             )
             self.conn.commit()
 
-    def get(self, scan_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, scan_id: str) -> dict[str, Any] | None:
         with self.lock:
             row = self.conn.execute(
                 "SELECT data, created_at FROM replay_traces WHERE scan_id = ?", (scan_id,)
@@ -107,7 +109,7 @@ class ReplayStore:
             ]
             return trace
 
-    def list_ids(self) -> List[str]:
+    def list_ids(self) -> list[str]:
         with self.lock:
             rows = self.conn.execute("SELECT scan_id FROM replay_traces").fetchall()
             return [r[0] for r in rows]
@@ -132,11 +134,18 @@ class ReplayStore:
             self.purge_old()
 
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         rows = self.conn.execute("SELECT data FROM replay_traces").fetchall()
         total = len(rows)
         if total == 0:
-            return {"total_scans": 0, "avg_risk": 0, "avg_confidence": 0, "allow_count": 0, "deny_count": 0, "actions_breakdown": {}}
+            return {
+            "total_scans": 0,
+            "avg_risk": 0,
+            "avg_confidence": 0,
+            "allow_count": 0,
+            "deny_count": 0,
+            "actions_breakdown": {},
+        }
 
         risks = []
         confs = []
@@ -168,7 +177,7 @@ class ReplayStore:
             "actions_breakdown": actions_count,
         }
 
-    def risk_trend(self, limit=20) -> List[Dict[str, Any]]:
+    def risk_trend(self, limit=20) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT data FROM replay_traces ORDER BY rowid DESC LIMIT ?", (limit,)
         ).fetchall()
@@ -187,6 +196,6 @@ class ReplayStore:
             })
         return trend
 
-    def to_json(self, scan_id: str) -> Optional[str]:
+    def to_json(self, scan_id: str) -> str | None:
         trace = self.get(scan_id)
         return json.dumps(trace, indent=2) if trace else None

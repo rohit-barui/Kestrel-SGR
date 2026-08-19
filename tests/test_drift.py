@@ -1,5 +1,7 @@
 import unittest
+
 from core.drift import DriftTracker
+
 
 class TestDriftTracker(unittest.TestCase):
     def setUp(self):

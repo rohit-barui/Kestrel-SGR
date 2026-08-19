@@ -11,7 +11,7 @@ Supports:
 """
 
 import re
-from typing import Dict, Any, List
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Tokeniser
@@ -43,7 +43,7 @@ TOKEN_SPEC = [
 TOKEN_RE = re.compile("|".join(f"(?P<{name}>{pattern})" for name, pattern in TOKEN_SPEC))
 
 
-def tokenize(text: str) -> List[tuple]:
+def tokenize(text: str) -> list[tuple]:
     tokens = []
     for m in TOKEN_RE.finditer(text):
         kind = m.lastgroup
@@ -69,7 +69,7 @@ def tokenize(text: str) -> List[tuple]:
 # ---------------------------------------------------------------------------
 
 class Node:
-    def evaluate(self, input_data: Dict[str, Any]) -> bool:
+    def evaluate(self, input_data: dict[str, Any]) -> bool:
         raise NotImplementedError
 
 
@@ -79,25 +79,25 @@ class BinOp(Node):
         self.left = left
         self.right = right
 
-    def evaluate(self, input_data: Dict[str, Any]) -> bool:
-        l = self.left.evaluate(input_data)
-        r = self.right.evaluate(input_data)
+    def evaluate(self, input_data: dict[str, Any]) -> bool:
+        left_val = self.left.evaluate(input_data)
+        right_val = self.right.evaluate(input_data)
         if self.op in ("&&", "and"):
-            return l and r
+            return left_val and right_val
         elif self.op in ("||", "or"):
-            return l or r
+            return left_val or right_val
         elif self.op == "==":
-            return isinstance(l, type(r)) and l == r
+            return isinstance(left_val, type(right_val)) and left_val == right_val
         elif self.op == "!=":
-            return l != r
+            return left_val != right_val
         elif self.op == ">":
-            return l > r
+            return left_val > right_val
         elif self.op == ">=":
-            return l >= r
+            return left_val >= right_val
         elif self.op == "<":
-            return l < r
+            return left_val < right_val
         elif self.op == "<=":
-            return l <= r
+            return left_val <= right_val
         raise RuntimeError(f"Unknown operator: {self.op}")
 
 
@@ -106,7 +106,7 @@ class UnaryOp(Node):
         self.op = op
         self.operand = operand
 
-    def evaluate(self, input_data: Dict[str, Any]) -> bool:
+    def evaluate(self, input_data: dict[str, Any]) -> bool:
         val = self.operand.evaluate(input_data)
         if self.op == "not":
             return not val
@@ -114,11 +114,11 @@ class UnaryOp(Node):
 
 
 class FieldAccess(Node):
-    def __init__(self, path: List[str]):
+    def __init__(self, path: list[str]):
         # path e.g. ["input", "risk_score"] — skip leading "input"
         self.path = path[1:] if path and path[0] == "input" else path
 
-    def evaluate(self, input_data: Dict[str, Any]) -> Any:
+    def evaluate(self, input_data: dict[str, Any]) -> Any:
         cur = input_data
         for key in self.path:
             if isinstance(cur, dict) and key in cur:
@@ -132,7 +132,7 @@ class Literal(Node):
     def __init__(self, value):
         self.value = value
 
-    def evaluate(self, input_data: Dict[str, Any]) -> Any:
+    def evaluate(self, input_data: dict[str, Any]) -> Any:
         return self.value
 
 
@@ -141,7 +141,7 @@ class Literal(Node):
 # ---------------------------------------------------------------------------
 
 class Parser:
-    def __init__(self, tokens: List[tuple]):
+    def __init__(self, tokens: list[tuple]):
         self.tokens = tokens
         self.pos = 0
 
@@ -249,11 +249,11 @@ class Parser:
 class SimpleRegoEngine:
     def __init__(self, rego_path: str):
         self.rego_path = rego_path
-        self._rule_asts: List[Node] = []  # one AST per allow block
+        self._rule_asts: list[Node] = []  # one AST per allow block
         self._load_rego()
 
     def _load_rego(self):
-        with open(self.rego_path, "r", encoding="utf-8") as f:
+        with open(self.rego_path, encoding="utf-8") as f:
             content = f.read()
 
         # Find all allow { ... } blocks (handle nested braces)
@@ -297,7 +297,7 @@ class SimpleRegoEngine:
             if ast is not None:
                 self._rule_asts.append(ast)
 
-    def evaluate(self, input_data: Dict[str, Any]) -> bool:
+    def evaluate(self, input_data: dict[str, Any]) -> bool:
         if not self._rule_asts:
             return False
         # OR together all rule blocks

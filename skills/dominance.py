@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # JSON Schema constants for input/output validation
@@ -120,10 +120,10 @@ CONTAINMENT_ACTIONS_OUTPUT_SCHEMA = {
     "required": ["output"]
 }
 
-def rollback_noop(params: Dict[str, Any]):
+def rollback_noop(params: dict[str, Any]):
     pass
 
-def deploy_honey_credentials(payload: Dict[str, Any]) -> Dict[str, Any]:
+def deploy_honey_credentials(payload: dict[str, Any]) -> dict[str, Any]:
     actions = payload.get("recommend_actions", {}).get("actions", [])
     risk = payload.get("apply_veto", {}).get("risk_score", 0)
     creds = []
@@ -135,7 +135,7 @@ def deploy_honey_credentials(payload: Dict[str, Any]) -> Dict[str, Any]:
         "side_effects": [{"action": "deploy_honey_cred", "params": {"creds": creds}, "rollback": rollback_noop}]
     }
 
-def rewrite_links(payload: Dict[str, Any]) -> Dict[str, Any]:
+def rewrite_links(payload: dict[str, Any]) -> dict[str, Any]:
     urls = payload.get("extract_urls", {}).get("urls", [])
     actions = payload.get("recommend_actions", {}).get("actions", [])
     rewritten = {}
@@ -148,7 +148,7 @@ def rewrite_links(payload: Dict[str, Any]) -> Dict[str, Any]:
         "side_effects": [{"action": "rewrite_links", "params": {"rewritten": rewritten}, "rollback": rollback_noop}]
     }
 
-def block_ip(payload: Dict[str, Any]) -> Dict[str, Any]:
+def block_ip(payload: dict[str, Any]) -> dict[str, Any]:
     ip_address = "10.0.0.1"
     return {
         "output": {"blocked_ip": ip_address, "blocked": True},
@@ -156,15 +156,17 @@ def block_ip(payload: Dict[str, Any]) -> Dict[str, Any]:
         "side_effects": [{"action": "block_ip", "params": {"ip": ip_address}, "rollback": rollback_noop}]
     }
 
-def quarantine_email(payload: Dict[str, Any]) -> Dict[str, Any]:
+def quarantine_email(payload: dict[str, Any]) -> dict[str, Any]:
     message_id = "msg-0001"
     return {
         "output": {"message_id": message_id, "quarantined": True},
         "confidence": 90,
-        "side_effects": [{"action": "quarantine_email", "params": {"message_id": message_id}, "rollback": rollback_noop}]
+        "side_effects": [
+            {"action": "quarantine_email", "params": {"message_id": message_id}, "rollback": rollback_noop}
+        ]
     }
 
-def trigger_mfa_reset(payload: Dict[str, Any]) -> Dict[str, Any]:
+def trigger_mfa_reset(payload: dict[str, Any]) -> dict[str, Any]:
     user_id = "target_user"
     return {
         "output": {"user_id": user_id, "mfa_reset": True},
@@ -172,7 +174,7 @@ def trigger_mfa_reset(payload: Dict[str, Any]) -> Dict[str, Any]:
         "side_effects": [{"action": "trigger_mfa_reset", "params": {"user_id": user_id}, "rollback": rollback_noop}]
     }
 
-def containment_actions(payload: Dict[str, Any]) -> Dict[str, Any]:
+def containment_actions(payload: dict[str, Any]) -> dict[str, Any]:
     actions = payload.get("recommend_actions", {}).get("actions", [])
     risk = payload.get("apply_veto", {}).get("risk_score", 0)
     result = {"blocked_ips": [], "quarantined": False, "mfa_reset": False}

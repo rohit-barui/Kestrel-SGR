@@ -15,16 +15,16 @@ first run when no model is present.  Training data is synthetic but covers the
 typical clean, phishing and borderline cases used throughout the test suite.
 """
 import os
-from config.constants import EXAMPLE_URLS
 import pickle
-import hashlib
-from typing import Dict, Any, List
+from typing import Any
+
+from config.constants import EXAMPLE_URLS
 
 # Try optional import of scikit‑learn – if unavailable we fall back to rule‑based.
 try:
     from sklearn.ensemble import RandomForestClassifier
-    from sklearn.model_selection import train_test_split
     from sklearn.metrics import accuracy_score
+    from sklearn.model_selection import train_test_split
     SKLEARN_AVAILABLE = True
 except Exception:  # pragma: no cover – import may fail on minimal CI images.
     SKLEARN_AVAILABLE = False
@@ -55,7 +55,7 @@ class PhishingFeatureExtractor:
         entropy = -sum((count / len(url)) * math.log2(count / len(url)) for count in freq.values())
         return entropy
 
-    def extract(self, payload: Dict[str, Any]) -> List[float]:
+    def extract(self, payload: dict[str, Any]) -> list[float]:
         # URLs
         urls = payload.get("extract_urls", {}).get("urls", [])
         url_count = len(urls)
@@ -172,17 +172,17 @@ class MLScorer:
             False,
             1,
         )
-        X = [benign, phishing, borderline]
+        x = [benign, phishing, borderline]
         y = [0, 1, 0]
-        return X, y
+        return x, y
 
     def _train_and_save(self):
-        X, y = self._synthetic_dataset()
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
+        x, y = self._synthetic_dataset()
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33, random_state=42)
         model = RandomForestClassifier(n_estimators=50, random_state=42)
-        model.fit(X_train, y_train)
+        model.fit(x_train, y_train)
         # Simple sanity check – ensure >80% accuracy on this tiny set.
-        preds = model.predict(X_test)
+        preds = model.predict(x_test)
         if accuracy_score(y_test, preds) < 0.8:
             # Fallback to rule‑based if training is absurdly bad.
             self.model = None
@@ -195,7 +195,7 @@ class MLScorer:
     # ---------------------------------------------------------------------
     # Scoring – returns a dict compatible with SGR expectations.
     # ---------------------------------------------------------------------
-    def score(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def score(self, payload: dict[str, Any]) -> dict[str, Any]:
         features = self.extractor.extract(payload)
         # If we have a trained sklearn model, use it.
         if self.model is not None:
@@ -225,7 +225,7 @@ class MLScorer:
 # Helper for external callers – a singleton instance is sufficient.
 scorer = MLScorer()
 
-def ml_score(payload: Dict[str, Any]) -> Dict[str, Any]:
+def ml_score(payload: dict[str, Any]) -> dict[str, Any]:
     """Public wrapper used by the DAG.
 
     ``payload`` is the same dict passed to other skill functions – it contains the

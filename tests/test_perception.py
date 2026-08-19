@@ -1,15 +1,17 @@
 import unittest
+
 from skills.perception import (
-    ingest_payload,
-    extract_urls,
-    scan_qr_codes,
-    extract_archive_password,
-    whois_lookup,
-    enrich_dns,
     detect_typo_squatting,
+    enrich_dns,
     enrich_external,
+    extract_archive_password,
     extract_entities,
+    extract_urls,
+    ingest_payload,
+    scan_qr_codes,
+    whois_lookup,
 )
+
 
 class TestPerception(unittest.TestCase):
     def test_ingest_email(self):
@@ -38,6 +40,17 @@ class TestPerception(unittest.TestCase):
     def test_ingest_empty_raises(self):
         with self.assertRaises(ValueError):
             ingest_payload({})
+
+    def test_ingest_urls_list(self):
+        result = ingest_payload({"urls": ["https://evil.com", "https://phish.xyz"]})
+        self.assertEqual(result["output"]["type"], "email")
+        self.assertIn("https://evil.com", result["output"]["content"])
+        self.assertIn("https://phish.xyz", result["output"]["content"])
+
+    def test_ingest_urls_string(self):
+        result = ingest_payload({"urls": "https://evil.com"})
+        self.assertEqual(result["output"]["type"], "email")
+        self.assertIn("https://evil.com", result["output"]["content"])
 
     def test_extract_urls(self):
         payload = {"ingest": {"content": "Visit https://example.com and http://test.org"}}

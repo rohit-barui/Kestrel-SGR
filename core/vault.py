@@ -2,7 +2,6 @@ import json
 import os
 import secrets
 from pathlib import Path
-from typing import Dict, Optional
 
 DEFAULT_PROVIDER = "json"
 DEFAULT_JSON_PATH = "data/secrets.json"
@@ -11,9 +10,9 @@ DEFAULT_JSON_PATH = "data/secrets.json"
 class _JsonBackend:
     def __init__(self, path: str = DEFAULT_JSON_PATH):
         self._path = Path(path)
-        self._cache: Optional[Dict[str, str]] = None
+        self._cache: dict[str, str] | None = None
 
-    def _load(self) -> Dict[str, str]:
+    def _load(self) -> dict[str, str]:
         if self._cache is None:
             if not self._path.is_file():
                 self._cache = {}
@@ -38,7 +37,7 @@ class _JsonBackend:
             json.dump(self._cache, f, indent=2)
 
 
-_backend: Optional[_JsonBackend] = None
+_backend: _JsonBackend | None = None
 
 
 def _get_backend():
@@ -60,7 +59,7 @@ def get_secret(name: str) -> str:
     return _get_backend().get(name)
 
 
-def ensure_secret(name: str, value: Optional[str] = None) -> str:
+def ensure_secret(name: str, value: str | None = None) -> str:
     """Return an existing secret, or generate and persist a new random one.
 
     This is used for secrets that must exist for the system to function (e.g.

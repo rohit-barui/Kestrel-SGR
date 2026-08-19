@@ -1,8 +1,7 @@
-import os
 import json
 import logging
+import os
 from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 logger = logging.getLogger("apcs")
 

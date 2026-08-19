@@ -1,7 +1,7 @@
-import unittest
 import os
 import tempfile
-import json
+import unittest
+
 from core.cache import Cache
 
 

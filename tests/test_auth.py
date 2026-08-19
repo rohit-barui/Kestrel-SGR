@@ -1,9 +1,9 @@
-import os
 import json
-import builtins
-import io
+
 import pytest
-from core.auth import AuthManager, TOKEN_FILE
+
+from core.auth import AuthManager
+
 
 @pytest.fixture(autouse=True)
 def isolated_env(tmp_path, monkeypatch):
@@ -12,15 +12,19 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("APCS_TOKEN_FILE", str(token_path))
     # Ensure module reload uses the env var
     import importlib
+
     import core.auth as auth_mod
     importlib.reload(auth_mod)
+    # Rebind the class name this module holds so AuthManager() defaults to
+    # the freshly reloaded TOKEN_FILE (temp path) instead of the stale class.
+    global AuthManager
+    AuthManager = auth_mod.AuthManager
     yield
     # Cleanup
     if token_path.exists():
         token_path.unlink()
 
 def test_generate_and_validate_token(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     token = mgr.generate_token("unit-test")
     assert isinstance(token, str) and len(token) == 64
@@ -29,7 +33,6 @@ def test_generate_and_validate_token(isolated_env):
     assert info is not None and info["label"] == "unit-test"
 
 def test_revoke_token(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     token = mgr.generate_token()
     assert mgr.revoke_token(token) is True
@@ -39,7 +42,6 @@ def test_revoke_token(isolated_env):
     assert mgr.revoke_token(token) is False
 
 def test_list_tokens_truncation(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     long_token = mgr.generate_token(label="test")
     # Find the dict entry whose label matches our generated token
@@ -53,7 +55,9 @@ def test_default_auto_generation(monkeypatch, tmp_path, capsys):
     token_path = tmp_path / "default_tokens.json"
     monkeypatch.setenv("APCS_TOKEN_FILE", str(token_path))
     # Reload module to trigger auto‑generation block
-    import importlib, core.auth as auth_mod
+    import importlib
+
+    import core.auth as auth_mod
     importlib.reload(auth_mod)
     captured = capsys.readouterr()
     # Should have printed a generated token line
@@ -65,7 +69,6 @@ def test_default_auto_generation(monkeypatch, tmp_path, capsys):
 
 
 def test_generate_token_with_role(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     token = mgr.generate_token("admin-key", role="Admin")
     info = mgr.validate_token(token)
@@ -73,32 +76,27 @@ def test_generate_token_with_role(isolated_env):
     assert info["role"] == "Admin"
 
 def test_default_role_is_analyst(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     token = mgr.generate_token("default-key")
     info = mgr.validate_token(token)
     assert info["role"] == "Analyst"
 
 def test_has_role_returns_true(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     token = mgr.generate_token("admin-key", role="Admin")
     assert mgr.has_role(token, "Admin") is True
 
 def test_has_role_returns_false_for_wrong_role(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     token = mgr.generate_token("reader-key", role="Analyst")
     assert mgr.has_role(token, "Admin") is False
 
 def test_has_role_returns_false_for_invalid_token(isolated_env):
-    from core.auth import AuthManager
     mgr = AuthManager()
     assert mgr.has_role("invalid-token", "Analyst") is False
 
 def test_corrupt_token_file_treated_as_empty(tmp_path):
     # Write invalid JSON to the token file; AuthManager must not crash
-    from core.auth import AuthManager
     token_path = tmp_path / "corrupt_tokens.json"
     token_path.write_text("{not valid json[[[")
     mgr = AuthManager(str(token_path))

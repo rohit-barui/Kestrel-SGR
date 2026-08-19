@@ -1,5 +1,7 @@
 import unittest
+
 from core.gateway import Gateway, rollback_noop
+
 
 class TestGateway(unittest.TestCase):
     def setUp(self):

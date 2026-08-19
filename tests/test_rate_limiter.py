@@ -1,5 +1,7 @@
 import unittest
+
 from server import RateLimiter
+
 
 class TestRateLimiter(unittest.TestCase):
     def test_allows_within_limit(self):

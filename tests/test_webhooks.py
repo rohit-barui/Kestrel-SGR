@@ -77,6 +77,27 @@ class TestWebhookHandler(unittest.TestCase):
         self.assertIn("scan_payload", result)
         self.assertIn("email", result["scan_payload"])
 
+    def test_customer_report(self):
+        result = self.handler.process(
+            "customer_report",
+            {"email": "phish body", "reporter": "jane@acme.com", "message_id": "msg-1", "auto_remediate": True},
+        )
+        self.assertEqual(result["status"], "accepted")
+        self.assertTrue(result["auto_remediate"])
+        self.assertEqual(result["scan_payload"]["_reporter"], "jane@acme.com")
+        self.assertEqual(result["scan_payload"]["_message_id"], "msg-1")
+        self.assertTrue(result["scan_payload"]["_report"])
+
+    def test_customer_report_no_message_id(self):
+        result = self.handler.process("customer_report", {"email": "phish body", "reporter": "jane@acme.com"})
+        self.assertEqual(result["status"], "accepted")
+        self.assertNotIn("_message_id", result["scan_payload"])
+
+    def test_customer_report_missing_fields(self):
+        result = self.handler.process("customer_report", {"reporter": "jane@acme.com"})
+        self.assertEqual(result["status"], "error")
+        self.assertIn("No email content or message_id", result["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

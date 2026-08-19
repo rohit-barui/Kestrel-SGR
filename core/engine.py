@@ -8,20 +8,19 @@ Provides:
 - Error handling that triggers gateway rollback
 """
 
-import json
-from typing import Dict, List, Any, Callable, Tuple
+from collections.abc import Callable
+from typing import Any
 
 import jsonschema
 
 from core.reasoning import combine, heuristic_boost
-
 from core.tasks import run_skill
 
 # Skill function registry – maps name → callable so Celery workers can resolve them.
-_SKILL_REGISTRY: Dict[str, Callable] = {}
+_SKILL_REGISTRY: dict[str, Callable] = {}
 
 # Placeholder types – real implementations will replace these
-SkillFunction = Callable[[Dict[str, Any]], Dict[str, Any]]
+SkillFunction = Callable[[dict[str, Any]], dict[str, Any]]
 
 SKILL_WEIGHTS = {
     "ingest": 0.05, "extract_urls": 0.10, "scan_qr_codes": 0.10,
@@ -33,32 +32,32 @@ SKILL_WEIGHTS = {
 
 
 class SkillNode:
-    def __init__(self, name: str, func: SkillFunction, deps: List[str] = None,
+    def __init__(self, name: str, func: SkillFunction, deps: list[str] = None,
                  input_schema: dict = None, output_schema: dict = None):
         self.name = name
         self.func = func
         self.deps = deps or []
-        self.result: Dict[str, Any] = {}
+        self.result: dict[str, Any] = {}
         self.success: bool = False
         self.input_schema = input_schema
         self.output_schema = output_schema
 
 class SkillGraphRuntime:
-    def __init__(self, nodes: List[SkillNode], gateway):
+    def __init__(self, nodes: list[SkillNode], gateway):
         self.nodes = {n.name: n for n in nodes}
         self.gateway = gateway
-        self.execution_order: List[SkillNode] = []  # populated after topological sort
+        self.execution_order: list[SkillNode] = []  # populated after topological sort
 
     # ---------------------------------------------------------------------
     # Topological sort – Kahn's algorithm (simplified, raises on cycles)
     # ---------------------------------------------------------------------
-    def _topological_sort(self) -> List[SkillNode]:
+    def _topological_sort(self) -> list[SkillNode]:
         in_degree = {name: 0 for name in self.nodes}
         for node in self.nodes.values():
             for dep in node.deps:
                 in_degree[node.name] += 1
         ready = [self.nodes[n] for n, d in in_degree.items() if d == 0]
-        order: List[SkillNode] = []
+        order: list[SkillNode] = []
         while ready:
             current = ready.pop(0)
             order.append(current)
@@ -88,7 +87,7 @@ class SkillGraphRuntime:
     # ---------------------------------------------------------------------
     # Execution – runs nodes via Celery tasks, aggregates confidence
     # ---------------------------------------------------------------------
-    def run(self, entry_payload: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, entry_payload: dict[str, Any]) -> dict[str, Any]:
         try:
             self.execution_order = self._topological_sort()
         except Exception as e:
@@ -99,8 +98,8 @@ class SkillGraphRuntime:
             self.register_skill(n.name, n.func)
 
         # Mapping of node name -> output for dependency injection
-        context: Dict[str, Any] = {"__entry__": entry_payload}
-        confidence_weights: List[Tuple[str, float]] = []
+        context: dict[str, Any] = {"__entry__": entry_payload}
+        confidence_weights: list[tuple[str, float]] = []
 
         while self.execution_order:
             # find nodes ready to run (deps already in context)
@@ -161,7 +160,7 @@ class SkillGraphRuntime:
         }
 
 # Example placeholder skill functions (to be replaced by real implementations)
-def dummy_skill(payload: Dict[str, Any]) -> Dict[str, Any]:
+def dummy_skill(payload: dict[str, Any]) -> dict[str, Any]:
     return {"output": {"dummy": True}, "confidence": 100}
 
 # End of core/engine.py

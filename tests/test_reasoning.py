@@ -1,5 +1,7 @@
 import unittest
+
 from core.reasoning import combine, heuristic_boost
+
 
 class TestReasoning(unittest.TestCase):
     def test_combine_empty(self):

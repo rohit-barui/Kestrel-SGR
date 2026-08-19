@@ -1,5 +1,7 @@
 import unittest
+
 from core.graph import IdentityGraph
+
 
 class TestIdentityGraph(unittest.TestCase):
     def setUp(self):

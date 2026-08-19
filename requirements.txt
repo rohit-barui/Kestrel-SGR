@@ -2,8 +2,7 @@ jsonschema>=4.0.0
 celery>=5.3.0
 redis>=5.0.0
 cryptography>=42.0.0
-
-# scikit-learn>=1.0.0  # optional ML dependency
+scikit-learn>=1.0.0
 
 # Dev/CI only:
 pytest

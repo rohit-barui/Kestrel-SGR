@@ -63,7 +63,12 @@ const GRAPH_NODES = [
   { id: "extract_entities", plane: "perception", label: "Entities", deps: ["ingest"] },
   { id: "validate_spf_dkim", plane: "perception", label: "SPF/DKIM", deps: ["ingest"] },
   { id: "detonate_urls", plane: "perception", label: "Detonate", deps: ["extract_urls"] },
-  { id: "aggregate_risk", plane: "decision", label: "Risk Score", deps: ["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "detonate_urls"] },
+  { id: "check_ip_reputation", plane: "perception", label: "IP Reputation", deps: ["extract_urls"] },
+  { id: "check_file_reputation", plane: "perception", label: "File Reputation", deps: ["ingest"] },
+  { id: "threat_intel_lookup", plane: "perception", label: "Threat Intel", deps: ["extract_urls"] },
+  { id: "owasp_analysis", plane: "perception", label: "OWASP Scan", deps: ["extract_urls", "ingest"] },
+  { id: "phishing_validation", plane: "perception", label: "Phish Validate", deps: ["ingest", "validate_spf_dkim"] },
+  { id: "aggregate_risk", plane: "decision", label: "Risk Score", deps: ["extract_urls", "scan_qr_codes", "extract_archive_password", "whois_lookup", "enrich_dns", "detect_typo_squatting", "detonate_urls", "check_ip_reputation", "check_file_reputation", "threat_intel_lookup", "owasp_analysis", "phishing_validation"] },
   { id: "apply_veto", plane: "decision", label: "Veto", deps: ["aggregate_risk"] },
   { id: "recommend_actions", plane: "decision", label: "Actions", deps: ["apply_veto"] },
   { id: "deploy_honey_credentials", plane: "dominance", label: "Honey Creds", deps: ["recommend_actions", "apply_veto"] },
@@ -95,9 +100,9 @@ const payloadPreview = document.getElementById("payloadPreview");
 const riskScoreEl = document.getElementById("riskScore");
 const policyStatusEl = document.getElementById("policyStatus");
 const mlConfidenceEl = document.getElementById("mlConfidence");
-const actionsEl = document.getElementById("actions");
 const logEntries = document.getElementById("logEntries");
 const detonationArea = document.getElementById("detonationArea");
+const enrichmentArea = document.getElementById("enrichmentArea");
 const replayBtn = document.getElementById("replayBtn");
 const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
@@ -162,7 +167,6 @@ async function runCustomScan() {
   try {
     body = JSON.parse(text);
   } catch {
-    // If it's not valid JSON, treat the raw text as the email content automatically
     body = { email: text };
   }
 
@@ -170,7 +174,6 @@ async function runCustomScan() {
     log("Custom scan payload must contain 'email', 'sms', or 'voice' field", "error");
     return;
   }
-  // Check for PII
   try {
     const piiRes = await apiFetch("/api/check-pii", {
       method: "POST",
@@ -184,7 +187,6 @@ async function runCustomScan() {
       return;
     }
   } catch {
-    // PII check unavailable; proceed anyway
   }
   performCustomScan(body);
 }
@@ -227,7 +229,6 @@ async function performCustomScan(payload) {
   }
 }
 
-// URL / Domain Detonation
 document.getElementById("runUrlScanBtn").addEventListener("click", runUrlDetonation);
 
 async function runUrlDetonation() {
@@ -265,7 +266,6 @@ async function runUrlDetonation() {
   }
 }
 
-// File Upload Scan
 document.getElementById("runFileUploadBtn").addEventListener("click", runFileUploadScan);
 
 async function runFileUploadScan() {
@@ -325,12 +325,69 @@ function renderDetonationResults(data) {
       html += `<div class="url-reasons">${r.reasons.join(", ")}</div>`;
     }
     if (r.detonation_links && r.detonation_links.length) {
-      html += r.detonation_links.map(l => `<a class="detonation-link" href="${l}" target="_blank">&#128279; View on CyberWatch</a>`).join("");
+      html += r.detonation_links.map(l => `<a class="detonation-link" href="${l}" target="_blank">View on CyberWatch</a>`).join("");
     }
     html += '</div>';
   });
 
   detonationArea.innerHTML = html;
+}
+
+function renderEnrichmentResults(enrichment) {
+  if (!enrichmentArea) return;
+  if (!enrichment || Object.keys(enrichment).length === 0) {
+    enrichmentArea.innerHTML = '<span style="color: var(--text-dim); font-size: 11px;">No enrichment data.</span>';
+    return;
+  }
+  let html = '';
+  const ipRep = enrichment.ip_reputation || {};
+  const fileRep = enrichment.file_reputation || {};
+  const owasp = enrichment.owasp_findings || [];
+  const phish = enrichment.phishing_signals || {};
+  const ti = enrichment.threat_intel || [];
+
+  const ipKeys = Object.keys(ipRep);
+  if (ipKeys.length > 0) {
+    html += '<div style="margin-top: 8px;"><strong>IP Reputation</strong><div class="detonation-summary">';
+    ipKeys.forEach(d => {
+      const info = ipRep[d];
+      html += `<div class="detonation-url ${info.malicious ? 'malicious' : 'safe'}">${d}: ${info.aggregate_score}/100 (${info.malicious ? 'MALICIOUS' : 'Clean'})</div>`;
+    });
+    html += '</div></div>';
+  }
+
+  if (fileRep.sha256) {
+    html += '<div style="margin-top: 8px;"><strong>File Reputation</strong><div class="detonation-summary">';
+    html += `<div class="detonation-url ${fileRep.malicious ? 'malicious' : 'safe'}">${fileRep.sha256.slice(0,16)}... Score: ${fileRep.aggregate_score}/100</div>`;
+    html += '</div></div>';
+  }
+
+  if (owasp.length > 0) {
+    html += '<div style="margin-top: 8px;"><strong>OWASP Findings</strong><div class="detonation-summary">';
+    owasp.slice(0,5).forEach(f => {
+      html += `<div class="detonation-url ${f.severity === 'critical' || f.severity === 'high' ? 'malicious' : 'suspicious'}">[${f.severity.toUpperCase()}] ${f.name}: ${f.description}</div>`;
+    });
+    if (owasp.length > 5) html += `<div style="color: var(--text-dim); font-size: 11px;">...and ${owasp.length - 5} more</div>`;
+    html += '</div></div>';
+  }
+
+  if (phish.brand_impersonation || phish.missing_ssl || phish.header_mismatch) {
+    html += '<div style="margin-top: 8px;"><strong>Phishing Signals</strong><div class="detonation-summary">';
+    if (phish.brand_impersonation) html += '<div class="detonation-url malicious">Brand impersonation detected: ' + (phish.impersonated_brands || []).join(", ") + '</div>';
+    if (phish.missing_ssl) html += '<div class="detonation-url suspicious">Missing SSL on URL</div>';
+    if (phish.header_mismatch) html += '<div class="detonation-url malicious">Header mismatch / SPF spoof</div>';
+    html += '</div></div>';
+  }
+
+  if (ti.length > 0) {
+    html += '<div style="margin-top: 8px;"><strong>Threat Intelligence IoCs</strong><div class="detonation-summary">';
+    ti.slice(0,5).forEach(ioc => {
+      html += `<div class="detonation-url malicious">${ioc.type.toUpperCase()}: ${ioc.value}</div>`;
+    });
+    html += '</div></div>';
+  }
+
+  enrichmentArea.innerHTML = html || '<span style="color: var(--text-dim); font-size: 11px;">No enrichment data.</span>';
 }
 
 async function runScan() {
@@ -368,8 +425,11 @@ function resetGraph() {
   riskScoreEl.textContent = "-";
   riskScoreEl.className = "metric-value";
   policyStatusEl.textContent = "-";
-  confidenceEl.textContent = "-";
-  actionsEl.textContent = "-";
+  const confidenceEl = document.getElementById("mlConfidence");
+  if (confidenceEl) confidenceEl.textContent = "-";
+  const actionsEl = document.getElementById("actionsArea");
+  if (actionsEl) actionsEl.innerHTML = '<span style="color: var(--text-dim); font-size: 11px;">Waiting for scan...</span>';
+  if (enrichmentArea) enrichmentArea.innerHTML = '<span style="color: var(--text-dim); font-size: 11px;">Waiting for scan results...</span>';
 }
 
 function updateNodeColor(id, done = false, error = false) {
@@ -416,28 +476,44 @@ function setupSSE() {
       riskScoreEl.className = "metric-value" + (data.risk_score >= 70 ? " risk-high" : data.risk_score >= 30 ? " risk-medium" : " risk-low");
       policyStatusEl.textContent = data.decision;
       policyStatusEl.style.color = data.decision === "ALLOW" ? "var(--accent-emerald)" : "var(--accent-rose)";
-      confidenceEl.textContent = data.confidence + "%";
-      mlConfidenceEl.textContent = data.ml_confidence !== null ? data.ml_confidence + "%" : "-";
-      actionsEl.innerHTML = "";
-      data.actions.forEach(action => {
-        const btn = document.createElement("button");
-        btn.textContent = action;
-        btn.style.marginRight = "5px";
-        btn.style.padding = "4px 8px";
-        btn.style.fontSize = "10px";
-        btn.onclick = async () => {
-          btn.disabled = true;
-          await apiFetch("/api/action", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, target: state.scanId}) });
-          btn.textContent = "Executed";
-        };
-        actionsEl.appendChild(btn);
-      });
+      const confidenceEl = document.getElementById("mlConfidence");
+      if (confidenceEl) confidenceEl.textContent = data.confidence + "%";
+      const actionsEl = document.getElementById("actionsArea");
+      if (actionsEl) {
+        actionsEl.innerHTML = "";
+        data.actions.forEach(action => {
+          const btn = document.createElement("button");
+          btn.textContent = action;
+          btn.style.marginRight = "5px";
+          btn.style.padding = "4px 8px";
+          btn.style.fontSize = "10px";
+          btn.onclick = async () => {
+            btn.disabled = true;
+            await apiFetch("/api/action", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action, target: state.scanId}) });
+            btn.textContent = "Executed";
+          };
+          actionsEl.appendChild(btn);
+        });
+      }
     if (data.dominance) {
       if (data.dominance.honey_credentials.length) log("Honey creds deployed", "action");
       if (Object.keys(data.dominance.rewritten_urls).length) log("Links rewritten to proxy", "action");
       if (data.dominance.blocked_ips.length) log("IPs blocked: " + data.dominance.blocked_ips.join(", "), "action");
       if (data.dominance.quarantined) log("Email quarantined", "action");
       if (data.dominance.mfa_reset) log("MFA reset triggered", "action");
+    }
+    if (data.enrichment) {
+      renderEnrichmentResults(data.enrichment);
+      const ipRep = data.enrichment.ip_reputation || {};
+      const fileRep = data.enrichment.file_reputation || {};
+      const owasp = data.enrichment.owasp_findings || [];
+      const phish = data.enrichment.phishing_signals || {};
+      const ti = data.enrichment.threat_intel || [];
+      if (Object.keys(ipRep).length > 0) log("IP reputation checked for " + Object.keys(ipRep).length + " domains", "info");
+      if (fileRep.sha256) log("File reputation: " + (fileRep.malicious ? "MALICIOUS" : "clean"), fileRep.malicious ? "error" : "success");
+      if (owasp.length > 0) log("OWASP: " + owasp.length + " findings (" + owasp.filter(f => f.severity === 'critical' || f.severity === 'high').length + " critical/high)", "action");
+      if (phish.brand_impersonation) log("Phishing: brand impersonation detected", "error");
+      if (ti.length > 0) log("Threat intel: " + ti.length + " IoC matches", "error");
     }
     if (data.pii_redacted) {
       log("Training Notice: PII was automatically redacted from this payload before external processing.", "action");
@@ -536,7 +612,6 @@ async function loadAnalytics() {
     renderTrendChart(trend);
     renderAlertHistory(trend);
   } catch (e) {
-    // analytics unavailable
   }
 }
 
@@ -715,6 +790,119 @@ document.getElementById("sendWebhookBtn")?.addEventListener("click", async () =>
   document.getElementById("webhookResult").textContent = JSON.stringify(result, null, 2);
 });
 
+// ===================== REPUTATION TAB =====================
+document.getElementById("ipRepBtn")?.addEventListener("click", async () => {
+  const input = document.getElementById("ipRepInput");
+  const raw = input.value.trim();
+  if (!raw) return;
+  const ips = raw.split(",").map(s => s.trim()).filter(Boolean);
+  try {
+    const res = await apiFetch("/api/reputation/ip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ips }),
+    });
+    const data = await res.json();
+    const el = document.getElementById("ipRepResults");
+    let html = '<div class="detonation-summary">';
+    (data.ip_reputation ? Object.entries(data.ip_reputation) : []).forEach(([domain, info]) => {
+      const cls = info.malicious ? "malicious" : "safe";
+      html += `<div class="detonation-url ${cls}">${domain}: ${info.aggregate_score}/100 (${info.malicious ? 'MALICIOUS' : 'Clean'})</div>`;
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  } catch(e) {}
+});
+
+document.getElementById("fileRepBtn")?.addEventListener("click", async () => {
+  const hashInput = document.getElementById("fileHashInput");
+  const hash = hashInput.value.trim();
+  if (!hash) return;
+  try {
+    const res = await apiFetch("/api/reputation/file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hash }),
+    });
+    const data = await res.json();
+    const el = document.getElementById("fileRepResults");
+    const fr = data.file_reputation || {};
+    const cls = fr.malicious ? "malicious" : "safe";
+    el.innerHTML = `<div class="detonation-url ${cls}">${fr.sha256 || hash}<br>Score: ${fr.aggregate_score}/100<br>${fr.malicious ? 'MALICIOUS' : 'Clean'}</div>`;
+  } catch(e) {}
+});
+
+document.getElementById("owaspScanBtn")?.addEventListener("click", async () => {
+  const urlInput = document.getElementById("owaspUrlInput");
+  const contentInput = document.getElementById("owaspContentInput");
+  const url = urlInput.value.trim();
+  const content = contentInput.value.trim();
+  if (!url && !content) return;
+  try {
+    const res = await apiFetch("/api/owasp/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, content }),
+    });
+    const data = await res.json();
+    const el = document.getElementById("owaspResults");
+    const findings = data.owasp_findings || [];
+    const bySev = data.by_severity || {};
+    let html = `<div class="detonation-summary">Critical: ${bySev.critical || 0} | High: ${bySev.high || 0} | Medium: ${bySev.medium || 0} | Low: ${bySev.low || 0}</div>`;
+    findings.slice(0,10).forEach(f => {
+      const cls = f.severity === "critical" || f.severity === "high" ? "malicious" : "suspicious";
+      html += `<div class="detonation-url ${cls}">[${f.severity.toUpperCase()}] ${f.name}<br><span style="font-size: 10px; color: var(--text-dim);">${f.description}</span></div>`;
+    });
+    el.innerHTML = html || '<span style="color: var(--text-dim);">No OWASP findings.</span>';
+  } catch(e) {}
+});
+
+// ===================== PHISHING REPORTS TAB =====================
+document.getElementById("phishReportBtn")?.addEventListener("click", async () => {
+  const email = document.getElementById("phishReportEmail").value.trim();
+  const reporter = document.getElementById("phishReporter").value.trim();
+  const autoRemediate = document.getElementById("phishAutoRemediate").checked;
+  if (!email) {
+    document.getElementById("phishResults").innerHTML = '<span style="color: var(--accent-rose);">Please enter the reported email content.</span>';
+    return;
+  }
+  const btn = document.getElementById("phishReportBtn");
+  btn.disabled = true;
+  btn.textContent = "Validating...";
+  try {
+    const res = await apiFetch("/api/report/phishing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, reporter, auto_remediate: autoRemediate }),
+    });
+    const data = await res.json();
+    document.getElementById("phishResults").innerHTML =
+      `<div class="detonation-summary">
+        <div>Scan ID: ${data.scan_id}</div>
+        <div>Decision: <strong style="color: ${data.decision === 'ALLOW' ? 'var(--accent-emerald)' : 'var(--accent-rose)'}">${data.decision}</strong></div>
+        <div>Risk Score: ${data.risk_score}/100</div>
+        ${data.enrichment && data.enrichment.phishing_signals ? 
+          '<div style="margin-top: 8px;">Phishing Signals: ' + 
+          (data.enrichment.phishing_signals.brand_impersonation ? 'Brand Impersonation, ' : '') +
+          (data.enrichment.phishing_signals.missing_ssl ? 'Missing SSL, ' : '') +
+          (data.enrichment.phishing_signals.header_mismatch ? 'Header Mismatch' : '') +
+          '</div>' : ''}
+      </div>`;
+    log(`Phishing report submitted: ${data.scan_id} (${data.decision})`, data.decision === "ALLOW" ? "success" : "error");
+    const history = document.getElementById("phishHistory");
+    const entry = document.createElement("div");
+    entry.className = "alert-entry";
+    entry.innerHTML = `<span class="risk-badge ${data.risk_score >= 70 ? 'high' : 'medium'}">${data.risk_score}</span>${data.decision} (${data.scan_id})`;
+    history.prepend(entry);
+    document.getElementById("phishReportEmail").value = "";
+    document.getElementById("phishReporter").value = "";
+  } catch(e) {
+    document.getElementById("phishResults").innerHTML = `<span style="color: var(--accent-rose);">Error: ${e.message}</span>`;
+  }
+  btn.disabled = false;
+  btn.textContent = "Validate & Respond";
+});
+
 window.addEventListener("load", async () => {
   const authed = await checkAuth();
   if (!authed) return;
@@ -750,6 +938,14 @@ async function loadIntegrations() {
       document.getElementById("splunkUrl").value = c.splunk_url || "";
       document.getElementById("sentinelWorkspace").value = c.sentinel_workspace || "";
       document.getElementById("secopsKey").value = c.secops_key || "";
+      document.getElementById("vtApiKey").value = c.vt_api_key || "";
+      document.getElementById("abuseipdbKey").value = c.abuseipdb_api_key || "";
+      document.getElementById("otxApiKey").value = c.otx_api_key || "";
+      document.getElementById("defenderTenantId").value = c.defender_tenant_id || "";
+      document.getElementById("defenderClientId").value = c.defender_client_id || "";
+      document.getElementById("defenderClientSecret").value = c.defender_client_secret || "";
+      document.getElementById("ciscoEsaHost").value = c.cisco_esa_host || "";
+      document.getElementById("ciscoEsaKey").value = c.cisco_esa_key || "";
       document.getElementById("adminEmail").value = c.admin_email || "";
       document.getElementById("slackWebhook").value = c.slack_webhook || "";
       document.getElementById("actionWebhook").value = c.action_webhook || "";
@@ -763,6 +959,14 @@ document.getElementById("saveIntegrationsBtn")?.addEventListener("click", async 
     splunk_url: document.getElementById("splunkUrl").value,
     sentinel_workspace: document.getElementById("sentinelWorkspace").value,
     secops_key: document.getElementById("secopsKey").value,
+    vt_api_key: document.getElementById("vtApiKey").value,
+    abuseipdb_api_key: document.getElementById("abuseipdbKey").value,
+    otx_api_key: document.getElementById("otxApiKey").value,
+    defender_tenant_id: document.getElementById("defenderTenantId").value,
+    defender_client_id: document.getElementById("defenderClientId").value,
+    defender_client_secret: document.getElementById("defenderClientSecret").value,
+    cisco_esa_host: document.getElementById("ciscoEsaHost").value,
+    cisco_esa_key: document.getElementById("ciscoEsaKey").value,
     admin_email: document.getElementById("adminEmail").value,
     slack_webhook: document.getElementById("slackWebhook").value,
     action_webhook: document.getElementById("actionWebhook").value,

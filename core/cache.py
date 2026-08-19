@@ -1,8 +1,9 @@
-from .db import get_encrypted_conn
-import time
-import os
 import json
+import os
 import threading
+import time
+
+from .db import get_encrypted_conn
 
 
 class Cache:

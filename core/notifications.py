@@ -3,17 +3,16 @@
 import json
 import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Any
 from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 logger = logging.getLogger("apcs")
 
 class Notifier:
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         self.config = self._load_config(config_path or os.environ.get("APCS_NOTIFY_CONFIG", ""))
 
-    def _load_config(self, path: str) -> Dict[str, Any]:
+    def _load_config(self, path: str) -> dict[str, Any]:
         if path and os.path.exists(path):
             with open(path) as f:
                 return json.load(f)
@@ -29,7 +28,7 @@ class Notifier:
             logger.warning("Slack notification failed: %s", e)
             return False
 
-    def send_email(self, smtp_config: Dict[str, Any], subject: str, body: str) -> bool:
+    def send_email(self, smtp_config: dict[str, Any], subject: str, body: str) -> bool:
         try:
             import smtplib
             from email.message import EmailMessage
@@ -45,7 +44,7 @@ class Notifier:
             logger.warning("Email notification failed: %s", e)
             return False
 
-    def send_webhook(self, url: str, payload: Dict[str, Any]) -> bool:
+    def send_webhook(self, url: str, payload: dict[str, Any]) -> bool:
         try:
             data = json.dumps(payload).encode()
             req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
@@ -83,7 +82,14 @@ class Notifier:
 
         webhook_url = self.config.get("webhook", os.environ.get("ALERT_WEBHOOK", ""))
         if webhook_url:
-            self.send_webhook(webhook_url, {"scan_id": scan_id, "risk_score": risk_score, "decision": decision, "actions": actions, "dominance": dominance})
+            payload = {
+                "scan_id": scan_id,
+                "risk_score": risk_score,
+                "decision": decision,
+                "actions": actions,
+                "dominance": dominance,
+            }
+            self.send_webhook(webhook_url, payload)
 
         if risk_score >= 80:
             from core.siem_connectors import send_to_siem
