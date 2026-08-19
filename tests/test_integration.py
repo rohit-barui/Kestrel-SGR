@@ -31,9 +31,11 @@ class TestServerIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from core.auth import auth_manager
-        from server import PORT, APIHandler, ThreadedHTTPServer
+        from server import PORT, APIHandler, ThreadedHTTPServer, auth_manager
         # Ensure an Admin token exists so role-protected endpoints (e.g. /api/policies) work.
+        # Use server.auth_manager (not core.auth.auth_manager): test_auth.py reloads core.auth,
+        # replacing its singleton, but the live server keeps the original instance bound to
+        # the real apcs_tokens.json file.
         if not any(info.get("role") == "Admin" for info in auth_manager._tokens.values()):
             auth_manager.generate_token(label="ci-admin", role="Admin")
         cls.server = ThreadedHTTPServer(('127.0.0.1', PORT), APIHandler)
