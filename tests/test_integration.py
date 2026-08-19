@@ -31,7 +31,11 @@ class TestServerIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        from core.auth import auth_manager
         from server import PORT, APIHandler, ThreadedHTTPServer
+        # Ensure an Admin token exists so role-protected endpoints (e.g. /api/policies) work.
+        if not any(info.get("role") == "Admin" for info in auth_manager._tokens.values()):
+            auth_manager.generate_token(label="ci-admin", role="Admin")
         cls.server = ThreadedHTTPServer(('127.0.0.1', PORT), APIHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()

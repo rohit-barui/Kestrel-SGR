@@ -20,6 +20,26 @@ SAMPLE_PAYLOAD = {
 }
 
 
+class FakeRandomForest:
+    def __init__(self, **kwargs):
+        pass
+
+    def fit(self, x, y):
+        self._x = x
+        self._y = y
+        return self
+
+    def predict(self, x):
+        return [self._y[0] for _ in x]
+
+    def predict_proba(self, x):
+        return [[0.2, 0.8] for _ in x]
+
+
+class Stub:
+    pass
+
+
 # ---------------------------------------------------------------------------
 # PhishingFeatureExtractor
 # ---------------------------------------------------------------------------
@@ -161,8 +181,6 @@ class TestMLScorerModelPath:
                 pickle.dump(scorer.model, f)
         else:
             # sklearn unavailable; create a picklable stub
-            class Stub:
-                pass
             with open(model_path, "wb") as f:
                 pickle.dump(Stub(), f)
         monkeypatch.setattr(ml, "MODEL_PATH", model_path)
@@ -179,6 +197,9 @@ class TestMLScorerModelPath:
             f.write(b"not a pickle")
         monkeypatch.setattr(ml, "MODEL_PATH", model_path)
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 1.0)
         scorer = MLScorer()
         # Corrupt model is ignored; a fresh model is trained
         assert scorer.model is not None
@@ -187,6 +208,9 @@ class TestMLScorerModelPath:
         model_path = str(tmp_path / "trained.pkl")
         monkeypatch.setattr(ml, "MODEL_PATH", model_path)
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 1.0)
         scorer = MLScorer()
         assert scorer.model is not None
         assert os.path.exists(model_path)
@@ -203,6 +227,9 @@ class TestMLScorerModelPath:
         # Force poor model so the <0.8 accuracy branch returns None
         monkeypatch.setattr(ml, "MODEL_PATH", str(tmp_path / "bad.pkl"))
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 1.0)
         scorer = MLScorer()
 
         def bad_train():
@@ -215,9 +242,11 @@ class TestMLScorerModelPath:
         # Patch accuracy_score to force the fallback branch inside _train_and_save
         monkeypatch.setattr(ml, "MODEL_PATH", str(tmp_path / "lowacc.pkl"))
         monkeypatch.setattr(ml, "SKLEARN_AVAILABLE", True)
+        monkeypatch.setattr(ml, "train_test_split", lambda x, y, **kw: (x, x, y, y))
+        monkeypatch.setattr(ml, "RandomForestClassifier", FakeRandomForest)
+        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 0.5)
         scorer = MLScorer()
         scorer.model = None
-        monkeypatch.setattr(ml, "accuracy_score", lambda y_true, y_pred: 0.5)
         scorer._train_and_save()
         assert scorer.model is None
 
