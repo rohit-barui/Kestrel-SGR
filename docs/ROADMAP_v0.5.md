@@ -10,7 +10,7 @@ Version 0.5 introduces three major capability pillars on top of the existing v0.
 
 ---
 
-## New Skill Nodes (5 added, 24 total)
+## New Skill Nodes (5 added, 26 total)
 
 | Node | Module | Dependencies | Purpose |
 |------|--------|-------------|---------|

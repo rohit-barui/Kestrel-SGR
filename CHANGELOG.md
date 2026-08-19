@@ -2,6 +2,34 @@
 
 All notable changes to Kestrel-SGR (APCS) are documented here.
 
+## [0.5.0] — 2026-08-19
+
+### Added
+- **IP / File Reputation** (`skills/reputation.py`) — new `check_ip_reputation` and `check_file_reputation` DAG nodes. IP lookups via VirusTotal, AbuseIPDB and AlienVault OTX with abuse-confidence scoring; SHA-256 file-hash lookups against VirusTotal + OTX. On-demand API endpoints `/api/reputation/ip` and `/api/reputation/file`.
+- **Threat Intelligence Lookup** (`skills/reputation.py`) — `threat_intel_lookup` node performs URL/domain IoC matching via OTX pulses and VirusTotal.
+- **OWASP Security Analysis** (`skills/owasp.py`) — `owasp_analysis` node with 10 pattern detectors covering OWASP Top 10 categories (Reflected/DOM XSS, SQL Injection, Open Redirect, SSRF, etc.). On-demand `/api/owasp/scan` endpoint.
+- **Phishing Validation** (`skills/reputation.py`) — `phishing_validation` node detects brand impersonation, missing SSL, and header anomalies; contributes risk signals and feeds new veto overrides.
+- **Phishing Report Portal** (`server.py`, `web/`) — `/api/report/phishing` submission endpoint (with optional auto-remediation) and `/api/reports` history listing; new customer-report web tab.
+- **Email Security Integrations** (`core/integrations/`) — adapters for **Microsoft Defender for Email** (quarantine, block sender, verdict via Graph) and **Cisco ESA** (mark spam/clean, domain reputation, block sender), plus **VirusTotal**, **AbuseIPDB** and **AlienVault OTX** enrichment adapters.
+- **New Risk Signals** — IP/file reputation scores, OWASP risk (score/2), brand impersonation (+30), missing SSL (+10), header mismatch (+15), and threat-intel IoC match (+30 each) folded into `aggregate_risk`.
+- **New Veto Overrides** — IP reputation malicious → risk ≥ 80; file reputation malicious → risk ≥ 85; 2+ threat-intel IoC matches → risk ≥ 85; phishing likely (2+ signals) → risk ≥ 75.
+- **Web UI** — new Reputation & OWASP tab, Phishing Reports tab, extended Settings & Integrations tab (Defender, Cisco ESA, VT, AbuseIPDB, OTX), per-scan enrichment summary panel, updated DAG graph with 5 new perception nodes, live SSE enrichment logging.
+- **Expanded CI/CD** — docker build & push to `ghcr.io/rohit-barui/kestrel-sgr` (`latest` + commit SHA tags) on `main`, with `packages: write` permission; `pythonpath` pytest config for clean CI imports; test matrix on Python 3.11/3.12.
+
+### Changed
+- **DAG expanded from 19 to 26 nodes** — five new v0.5 perception nodes (`check_ip_reputation`, `check_file_reputation`, `threat_intel_lookup`, `owasp_analysis`, `phishing_validation`) wired into `ml_score` and `aggregate_risk`.
+- **Auth bypass tightened** (`server.py`) — removed over-broad `/api/auth/` prefix allow-list; only the explicit `/api/auth/login` endpoint bypasses token auth, so `/api/auth/token/generate` correctly enforces the Admin role.
+- **Dependencies** (`requirements.txt`) — `scikit-learn>=1.0.0` promoted from optional to required so the ML model path is exercised in CI.
+
+### Fixed
+- **Integration test auth** (`tests/test_integration.py`) — Admin token now provisioned via the live `server.auth_manager` instance; `test_auth.py` reloads `core.auth`, so using the module singleton wrote tokens to a temp file and `/api/policies` returned 403 in full-suite runs.
+- **ML model-path tests** (`tests/test_ml.py`) — robust when scikit-learn is absent: `train_test_split`/`RandomForestClassifier`/`accuracy_score` are patched with fakes and `Stub` moved to module level so it is picklable.
+- **CI lint on ruff 0.4.0** — added per-file ignores: `N802` for stdlib-required `do_GET`/`do_POST`/`do_PUT` in `server.py` and `N817` for the conventional `ET` alias in `ci/check_coverage.py`.
+
+### Tests
+- Suite grown to **506 tests** (up from ~303) with new `tests/test_server.py`, `tests/test_integrations.py`, `tests/test_reputation.py`, `tests/test_owasp.py`, `tests/test_detonation.py`, `tests/test_remediation.py`.
+- Coverage gates: **97.34% overall**, **≥ 99% per core/skills file** (verified by `ci/check_coverage.py`).
+
 ## [Unreleased]
 
 ### Added

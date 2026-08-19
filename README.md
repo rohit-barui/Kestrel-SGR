@@ -1,5 +1,13 @@
 # Kestrel-SGR (APCS) — Autonomous Phishing Control System
 
+[![CI](https://github.com/rohit-barui/Kestrel-SGR/actions/workflows/ci.yml/badge.svg)](https://github.com/rohit-barui/Kestrel-SGR/actions/workflows/ci.yml)
+[![CI/CD](https://github.com/rohit-barui/Kestrel-SGR/actions/workflows/test.yml/badge.svg)](https://github.com/rohit-barui/Kestrel-SGR/actions/workflows/test.yml)
+[![Coverage](https://img.shields.io/badge/coverage-97.34%25-brightgreen)](https://github.com/rohit-barui/Kestrel-SGR)
+[![Tests](https://img.shields.io/badge/tests-506%20passing-brightgreen)](https://github.com/rohit-barui/Kestrel-SGR)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Frohit--barui%2FKestrel--SGR-blue)](https://github.com/rohit-barui/Kestrel-SGR/pkgs/container/kestrel-sgr)
+[![License](https://img.shields.io/badge/license-AGPLv3-red)](LICENSE)
+
 **APCS** is a deterministic, multi‑plane security control system that detects, analyzes, predicts, and actively neutralises social‑engineering threats (phishing, smishing, vishing) across enterprise environments.
 
 Built on a **Skill Graph Runtime (SGR)** — a Directed Acyclic Graph (DAG) executor that chains perception, decision, and dominance skills with schema validation, confidence aggregation, and saga-based rollback.
@@ -16,20 +24,26 @@ Built on a **Skill Graph Runtime (SGR)** — a Directed Acyclic Graph (DAG) exec
 
 ## Features
 
-- **Skill Graph Runtime** — DAG executor with JSON schema validation and confidence aggregation
+- **Skill Graph Runtime** — 26-node DAG executor with JSON schema validation, confidence aggregation, and Celery-backed execution
+- **IP & File Reputation** — VirusTotal, AbuseIPDB, AlienVault OTX lookups for IP addresses and SHA-256 file hashes
+- **Threat Intelligence** — URL/domain IoC matching via OTX pulses and VirusTotal
+- **OWASP Security Analysis** — 10 automated detectors covering OWASP Top 10 patterns (XSS, SQLi, SSRF, open redirect, …)
+- **Phishing Validation** — brand-impersonation detection, SSL checks, and header-anomaly analysis
+- **Customer Report Portal** — phishing report submission with optional auto-remediation and history
+- **Email Security Integrations** — Microsoft Defender for Email and Cisco ESA adapters (quarantine, block sender, verdicts)
 - **URL Detonation Engine** — Multi-link reputation analysis via CyberWatch API + local heuristics (malicious/suspicious/safe classification)
 - **File Upload Scanning** — Upload `.eml`, `.txt`, `.msg`, `.html` files for automatic pipeline analysis
-- **Multi-Signal Risk Scoring** — 15+ signals including URL detonation, SPF/DKIM/DMARC spoof flags, ML risk score, entity extraction, and URL suspicion analysis
-- **Veto Overrides** — Hard deny on spoofed emails, malicious detonations, or high ML risk
+- **Multi-Signal Risk Scoring** — 20+ signals including detonation, SPF/DKIM/DMARC spoof flags, ML risk score, OWASP, IP/file reputation, and threat-intel IoCs
+- **Veto Overrides** — Hard deny on spoofed emails, malicious detonations, malicious reputation, phishing likelihood, or high ML risk
 - **Lightweight Rego Policy Engine** — Python-based OPA evaluator with runtime policy updates
-- **ML Scorer** — Optional scikit-learn based risk estimation (displayed as ML Confidence)
+- **ML Scorer** — scikit-learn based risk estimation (displayed as ML Confidence)
 - **Real-Time Dashboard** — Glassmorphic UI with D3.js DAG visualization, SSE live updates, replay, and analytics
 - **Forensic Replay** — Encrypted trace store with step-by-step skill replay
 - **SOAR Playbooks** — Action buttons to execute remediation (block, quarantine, MFA reset)
 - **PII Redaction** — Automatic detection and redaction of PII before external processing
 - **RBAC** — Token-based auth with Analyst and Admin roles
 - **Transaction Saga** — Automatic rollback of side-effects on failure
-- **303 passing tests** — 100% line coverage across all core and skills modules
+- **506 passing tests** — 97.34% overall line coverage, ≥99% across all core and skills modules
 
 ---
 
@@ -40,8 +54,8 @@ Built on a **Skill Graph Runtime (SGR)** — a Directed Acyclic Graph (DAG) exec
 pip install kestrel-sgr
 kestrel-sgr
 
-# Or with Docker (after Docker Desktop is running):
-# docker run -p 9090:9090 rohitbarui/kestrel-sgr
+# Or run the published Docker image (built & pushed to GHCR by CI):
+# docker run -p 9090:9090 ghcr.io/rohit-barui/kestrel-sgr:latest
 
 # Or one-click install (creates venv, installs deps, starts server):
 .\Kestrel-sgr.ps1
@@ -54,42 +68,112 @@ fe12751c01c2ad2a4f99004855697e18c173cfe54fdf57436b29f2a2923946b5
 
 ---
 
+## How It Works — Flow Diagram
+
+```mermaid
+flowchart TB
+    subgraph Ingest["1 · Ingestion"]
+        I[POST /api/scan] --> ING[ingest_payload]
+        I2[POST /api/scan/upload] --> ING
+        I3[POST /api/report/phishing] --> ING
+    end
+
+    subgraph Perception["2 · Perception Plane (14 nodes)"]
+        ING --> EU[extract_urls]
+        ING --> SQ[scan_qr_codes]
+        ING --> AP[extract_archive_password]
+        ING --> EE[extract_entities]
+        ING --> VSD[validate_spf_dkim]
+        EU --> WL[whois_lookup]
+        EU --> ED[enrich_dns]
+        EU --> DTS[detect_typo_squatting]
+        EU --> EX[enrich_external]
+        EU --> DU[detonate_urls]
+        EU --> CIP[check_ip_reputation]
+        ING --> CFR[check_file_reputation]
+        EU --> TIL[threat_intel_lookup]
+        EU --> OW[owasp_analysis]
+        ING --> PV[phishing_validation]
+        VSD --> PV
+        EU --> PV
+    end
+
+    subgraph Decision["3 · Decision Plane"]
+        EU --> MLS[ml_score]
+        SQ --> MLS
+        AP --> MLS
+        WL --> MLS
+        ED --> MLS
+        DTS --> MLS
+        EE --> MLS
+        EX --> MLS
+        DU --> MLS
+        VSD --> MLS
+        CIP --> MLS
+        CFR --> MLS
+        TIL --> MLS
+        OW --> MLS
+        PV --> MLS
+        EU --> AR[aggregate_risk]
+        SQ --> AR
+        AP --> AR
+        WL --> AR
+        ED --> AR
+        DTS --> AR
+        DU --> AR
+        CIP --> AR
+        CFR --> AR
+        TIL --> AR
+        OW --> AR
+        PV --> AR
+        MLS --> AR
+        AR --> AV[apply_veto]
+        AV --> RA[recommend_actions]
+        AV --> POL[Rego Policy]
+        POL --> AV
+    end
+
+    subgraph Dominance["4 · Dominance Plane"]
+        RA --> DHC[deploy_honey_credentials]
+        RA --> RL[rewrite_links]
+        RA --> CA[containment_actions]
+        RA --> BI[block_ip]
+        RA --> QE[quarantine_email]
+        RA --> MR[trigger_mfa_reset]
+    end
+
+    subgraph Output["5 · Response & Audit"]
+        AV --> RES[scan response + decision]
+        RA --> SSE[SSE live updates]
+        AV --> REP[encrypted forensic replay]
+        AV --> NC[notifications / SIEM]
+    end
+```
+
+---
+
 ## Architecture
 
 ```
 ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
 │   Perception Plane  │   │   Decision Plane    │   │   Dominance Plane   │
 │  (Ingestion, parse, │   │ (Risk scoring,      │   │ (Deception,         │
-│   enrichment)       │   │  policy evaluation) │   │  containment)       │
-└───────┬─────────────┘   └───────┬─────────────┘   └───────┬─────────────┘
-        │                         │                         │
-        └───────► SGR ◄───────────┘                         │
-                     │                                 │
-                     ▼                                 ▼
-               ┌─────────────────┐               ┌─────────────────┐
-               │   Core Package  │               │   Web Dashboard │
-               │ (engine, policy,│               │ (HTML/JS/CSS)   │
-               │  gateway, etc) │               └─────────────────┘
-               └─────────────────┘
+│   enrichment,       │   │  policy evaluation) │   │  containment)       │
+│   reputation, OWASP)│   └───────┬─────────────┘   └───────┬─────────────┘
+└───────┬─────────────┘           │                         │
+        │                         ▼                         ▼
+        └───────► SGR ◄───┌────────────────┐   ┌──────────────────────────┐
+                         │ Core Package   │   │ Integrations              │
+                         │ engine, policy,│   │ VT · AbuseIPDB · OTX ·    │
+                         │ gateway, replay│   │ Defender · Cisco ESA      │
+                         └────────────────┘   └──────────────────────────┘
 ```
 
 ### Planes
 
-1. **Perception** — Ingests raw payloads, extracts URLs/QR codes/passwords, enriches with WHOIS/DNS, detects typo-squatting, extracts entities, checks URL reputation via CyberWatch
-2. **Decision** — Aggregates risk from all signals, applies veto overrides, recommends actions, validates SPF/DKIM/DMARC
-3. **Dominance** — Deploys honey credentials, rewrites links, blocks IPs, quarantines emails, triggers MFA resets
-
-### DAG Flow (19 Nodes)
-
-```
-ingest → extract_urls → whois_lookup, enrich_dns, detect_typo_squatting, 
-                         extract_entities, enrich_external, detonate_urls, 
-                         validate_spf_dkim, scan_qr_codes, 
-                         extract_archive_password
-      → ml_score → aggregate_risk → apply_veto → recommend_actions
-      → deploy_honey_credentials, rewrite_links, containment_actions, 
-        block_ip, quarantine_email, trigger_mfa_reset
-```
+1. **Perception** — Ingests raw payloads, extracts URLs/QR codes/passwords, enriches with WHOIS/DNS, detects typo-squatting, extracts entities, detonates URLs, checks IP/file reputation, runs OWASP analysis, and validates phishing signals
+2. **Decision** — Aggregates risk from 20+ signals, applies veto overrides and Rego policy, recommends actions, validates SPF/DKIM/DMARC
+3. **Dominance** — Deploys honey credentials, rewrites links, blocks IPs, quarantines emails, triggers MFA resets, and remediates via Defender/Cisco ESA
 
 ---
 
@@ -100,6 +184,13 @@ ingest → extract_urls → whois_lookup, enrich_dns, detect_typo_squatting,
 | `POST` | `/api/scan` | Yes | Any | Run SGR pipeline on email/SMS/voice/URL payload |
 | `POST` | `/api/scan/upload` | Yes | Any | Upload `.eml`/`.txt`/`.msg`/`.html` for scanning |
 | `POST` | `/api/detonate` | Yes | Any | Batch URL/domain reputation analysis |
+| `POST` | `/api/reputation/ip` | Yes | Any | On-demand IP reputation check |
+| `POST` | `/api/reputation/file` | Yes | Any | On-demand file-hash reputation check |
+| `POST` | `/api/owasp/scan` | Yes | Any | On-demand OWASP pattern scan |
+| `POST` | `/api/report/phishing` | Yes | Any | Submit customer phishing report (+ optional auto-remediate) |
+| `GET` | `/api/reports` | Yes | Any | List phishing report history |
+| `POST` | `/api/check-pii` | Yes | Any | PII redaction check |
+| `POST` | `/api/webhook` | No* | — | External event receiver (APCS signature verified) |
 | `GET` | `/api/scenarios` | Yes | Any | List preset threat scenarios |
 | `GET` | `/api/health` | No | — | Liveness probe (version, uptime) |
 | `GET` | `/api/stats` | Yes | Any | Aggregate scan statistics |
@@ -125,13 +216,14 @@ ingest → extract_urls → whois_lookup, enrich_dns, detect_typo_squatting,
 ```
 Kestrel-SGR/
 ├── server.py                 # REST API + static router
-├── core/                     # Core runtime (engine, policy, gateway, detonation, etc.)
-├── skills/                   # DAG skill nodes (perception, decision, dominance)
+├── core/                     # Core runtime (engine, policy, gateway, detonation, integrations, etc.)
+├── skills/                   # DAG skill nodes (perception, decision, dominance, reputation, owasp)
 ├── policies/                 # Rego policy files
 ├── web/                      # Dashboard frontend (HTML/JS/CSS)
-├── tests/                    # 303 unit tests
+├── tests/                    # 506 unit & integration tests
 ├── docs/                     # Documentation
-├── docker/                   # Docker + nginx config
+├── docker/                   # Docker + load-test config
+├── ci/                       # Coverage gate script
 ├── Kestrel-sgr.ps1           # One-click installer
 └── requirements.txt
 ```
@@ -144,19 +236,20 @@ Kestrel-SGR/
 |----------|-------------|
 | [Architecture](docs/ARCHITECTURE.md) | HLD, LLD, data flow, core components |
 | [Core Package](docs/CORE.md) | Detailed module documentation |
-| [Skills Package](docs/SKILLS.md) | All 19 DAG nodes and risk scoring formulas |
+| [Skills Package](docs/SKILLS.md) | All 26 DAG nodes and risk scoring formulas |
 | [Policy Files](docs/POLICIES.md) | Rego rules and policy management |
 | [Web UI Guide](docs/WEB_UI.md) | Dashboard features and development |
 | [Usage Guide](docs/USAGE.md) | Complete walkthrough with API examples |
 | [Testing Guide](docs/TESTING.md) | Test suite, coverage requirements |
 | [Contributing](docs/CONTRIBUTING.md) | Workflow, code style, PR checklist |
+| [v0.5 Roadmap](docs/ROADMAP_v0.5.md) | Next-version capability plan |
 | [Change Log](CHANGELOG.md) | Version history |
 
 ---
 
 ## License
 
-MIT License — see `LICENSE` for details.
+GNU Affero General Public License v3.0 — see `LICENSE` for details.
 
 ## Owner
 

@@ -18,6 +18,12 @@ Kestrel-SGR/
 │   ├── export.py             # CSV and report generation
 │   ├── gateway.py            # Saga pattern transaction manager
 │   ├── graph.py              # In-memory entity-relationship graph
+│   ├── integrations/         # External adapters (v0.5)
+│   │   ├── virustotal.py     # IP/URL/file-hash lookups
+│   │   ├── abuseipdb.py      # IP reputation with abuse-confidence scoring
+│   │   ├── alienvault_otx.py # OTX pulses (IP/domain/URL/hash)
+│   │   ├── defender.py       # Microsoft Defender for Email remediation
+│   │   └── cisco_esa.py      # Cisco ESA remediation
 │   ├── logging.py            # Structured logging setup
 │   ├── ml.py                 # Optional ML risk scorer
 │   ├── notifications.py      # Slack, webhook, SIEM alert broadcaster
@@ -31,9 +37,11 @@ Kestrel-SGR/
 │   ├── tasks.py              # Celery async task definitions
 │   ├── vault.py              # Secrets manager (JSON file backend)
 │   └── webhooks.py           # Inbound webhook handler
-├── skills/                   # DAG skill nodes (3 planes)
+├── skills/                   # DAG skill nodes (3 planes, 26 nodes)
 │   ├── __init__.py
 │   ├── perception.py         # Ingestion, URL extraction, QR, WHOIS, DNS, typo, entities
+│   ├── reputation.py         # IP/file reputation, threat-intel, phishing validation (v0.5)
+│   ├── owasp.py              # OWASP Top 10 pattern detectors (v0.5)
 │   ├── decision.py           # Risk scoring, veto, actions, SPF/DKIM validation
 │   └── dominance.py          # Honey creds, link rewrite, IP block, quarantine, MFA reset
 ├── policies/
@@ -42,27 +50,38 @@ Kestrel-SGR/
 │   ├── index.html            # Entry point (glassmorphism UI)
 │   ├── style.css             # Dark-mode glassmorphic styles
 │   └── app.js                # Scan submission, SSE, D3 graph, analytics
-├── tests/                    # 303 unit tests
+├── tests/                    # 506 unit & integration tests
 │   ├── test_auth.py
 │   ├── test_cache.py
 │   ├── test_db.py
 │   ├── test_decision.py
 │   ├── test_detonation.py
 │   ├── test_dominance.py
+│   ├── test_drift.py
+│   ├── test_email_parser.py
 │   ├── test_engine.py
 │   ├── test_enricher.py
 │   ├── test_export.py
 │   ├── test_gateway.py
 │   ├── test_graph.py
 │   ├── test_integration.py
+│   ├── test_integrations.py
 │   ├── test_logging.py
 │   ├── test_ml.py
 │   ├── test_notifications.py
+│   ├── test_observability.py
+│   ├── test_owasp.py
 │   ├── test_perception.py
 │   ├── test_policy.py
+│   ├── test_privacy.py
 │   ├── test_rate_limiter.py
 │   ├── test_rbac.py
+│   ├── test_reasoning.py
+│   ├── test_remediation.py
 │   ├── test_replay.py
+│   ├── test_reputation.py
+│   ├── test_server.py
+│   ├── test_siem_connectors.py
 │   ├── test_vault.py
 │   └── test_webhooks.py
 ├── docs/                     # Documentation
@@ -70,7 +89,8 @@ Kestrel-SGR/
 │   ├── ARCHITECTURE.md
 │   ├── HLD.md
 │   ├── LLD.md
-│   ├── DEVELOPMENT_PLAN.md
+│   ├── ROADMAP_v0.5.md
+│   ├── WORKING.md
 │   └── CHANGELOG.md
 ├── docker/                   # Containerization
 │   ├── Dockerfile

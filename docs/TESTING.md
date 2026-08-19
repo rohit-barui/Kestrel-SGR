@@ -18,7 +18,7 @@ python -m pytest tests/test_decision.py::TestDecision::test_aggregate_risk_with_
 
 ## Test Suite
 
-**303 tests** covering all core modules and skills:
+**506 tests** covering all core modules, skills, and server endpoints:
 
 | Test File | Coverage |
 |-----------|----------|
@@ -26,21 +26,33 @@ python -m pytest tests/test_decision.py::TestDecision::test_aggregate_risk_with_
 | `test_cache.py` | Encrypted cache get/set/delete, TTL expiry |
 | `test_db.py` | Encrypted database connection |
 | `test_decision.py` | Risk scoring, veto logic, action recommendation, SPF/DKIM |
+| `test_detonation.py` | URL detonation engine, reputation classification |
 | `test_dominance.py` | Honey credentials, link rewrite, IP block, quarantine, MFA reset |
+| `test_drift.py` | False-positive/false-negative drift tracking |
+| `test_email_parser.py` | RFC 822 email parsing |
 | `test_engine.py` | DAG execution, schema validation, error handling, confidence aggregation |
 | `test_enricher.py` | DNS resolution, WHOIS lookup, URL suspicion analysis |
 | `test_export.py` | CSV and report generation |
 | `test_gateway.py` | Saga pattern record/commit/rollback |
 | `test_graph.py` | Entity-relationship graph operations |
 | `test_integration.py` | Server API endpoints, end-to-end scan flow |
+| `test_integrations.py` | External adapter mocks (VirusTotal, AbuseIPDB, OTX, Defender, Cisco ESA) |
 | `test_logging.py` | Structured logging setup |
 | `test_ml.py` | ML risk scoring |
 | `test_notifications.py` | Alert broadcasting |
+| `test_observability.py` | Metrics and observability endpoints |
+| `test_owasp.py` | OWASP Top 10 pattern detectors |
 | `test_perception.py` | Ingestion, URL extraction, QR scan, WHOIS, DNS, typo detection |
 | `test_policy.py` | Rego tokenization, parsing, evaluation |
+| `test_privacy.py` | PII redaction |
 | `test_rate_limiter.py` | Rate limiting per client IP |
 | `test_rbac.py` | Role-based access control for API endpoints |
+| `test_reasoning.py` | Risk reasoning aggregation |
+| `test_remediation.py` | SOAR remediation adapters |
 | `test_replay.py` | Encrypted trace storage and retrieval |
+| `test_reputation.py` | IP/file reputation, threat-intel, phishing validation skills |
+| `test_server.py` | Full HTTP endpoint test suite (FakeRequest harness) |
+| `test_siem_connectors.py` | SIEM connector push |
 | `test_vault.py` | Secrets management |
 | `test_webhooks.py` | Inbound webhook processing |
 

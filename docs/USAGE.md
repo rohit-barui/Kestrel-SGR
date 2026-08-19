@@ -88,6 +88,34 @@ curl -X POST http://localhost:9090/api/detonate \
   -H "Content-Type: application/json" \
   -d '{"urls": ["https://phish.xyz", "https://company.com"]}'
 
+# IP reputation (v0.5)
+curl -X POST http://localhost:9090/api/reputation/ip \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"ips": ["8.8.8.8"]}'
+
+# File hash reputation (v0.5)
+curl -X POST http://localhost:9090/api/reputation/file \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"hashes": ["<sha256>"]}'
+
+# OWASP scan (v0.5)
+curl -X POST http://localhost:9090/api/owasp/scan \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://phish.xyz/?q=<script>alert(1)</script>"}'
+
+# Submit a phishing report (v0.5)
+curl -X POST http://localhost:9090/api/report/phishing \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "suspicious message body...", "auto_remediate": true}'
+
+# List phishing reports (v0.5)
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:9090/api/reports
+
 # File upload
 curl -X POST http://localhost:9090/api/scan/upload \
   -H "Authorization: Bearer <token>" \
@@ -95,6 +123,26 @@ curl -X POST http://localhost:9090/api/scan/upload \
 
 # Health check
 curl http://localhost:9090/api/health
+```
+
+### Webhooks (v0.5)
+
+```bash
+# Send an external phishing report event to trigger a scan
+curl -X POST http://localhost:9090/api/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-APCS-Signature: <hmac-sha256 hex of body>" \
+  -d '{"event": "phishing_report", "email": "report@phish.xyz\n\nClick https://evil.com"}'
+```
+
+### Integration Configuration (Admin, v0.5)
+
+```bash
+# Store threat-intel / email-security API keys
+curl -X PUT http://localhost:9090/api/integrations \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"config": {"virustotal": {"api_key": "..."}, "abuseipdb": {"api_key": "..."}, "defender": {"client_id": "...", "client_secret": "..."}}}'
 ```
 
 ## Token Management (Admin)

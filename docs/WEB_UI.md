@@ -16,7 +16,7 @@ The main scan interface with three panels:
 - **Custom Investigation** — paste email headers/body directly and click "Run Custom Scan".
 
 **Center Panel — Skill Graph:**
-- Real-time D3.js force-directed graph showing all 19 DAG nodes across the three planes (Perception, Decision, Dominance).
+- Real-time D3.js force-directed graph showing all 26 DAG nodes across the three planes (Perception, Decision, Dominance).
 - Nodes change color as skills complete (cyan = done, rose = error).
 - Edges animate with a dash flow effect on activation.
 - Zoom and pan support.
@@ -27,7 +27,19 @@ The main scan interface with three panels:
 - **ML Confidence** — ML model's confidence percentage.
 - **SOAR Playbooks** — action buttons (block, quarantine, etc.) that execute remediation.
 - **Detonation Results** — per-URL reputation with malicious/suspicious/safe counts and CyberWatch links.
+- **Enrichment Summary** — per-scan IP/file reputation, OWASP findings, phishing signals, and threat-intel IoC matches.
 - **Execution Log** — timestamped event feed with skill completion, errors, and dominance actions.
+
+### Reputation & OWASP Tab (v0.5)
+
+- **IP Reputation** — submit IP addresses for instant VirusTotal/AbuseIPDB/OTX lookup via `POST /api/reputation/ip`.
+- **File Reputation** — submit SHA-256 hashes for file-hash reputation via `POST /api/reputation/file`.
+- **OWASP Scan** — submit a URL or content snippet for OWASP Top 10 pattern analysis via `POST /api/owasp/scan`.
+
+### Phishing Reports Tab (v0.5)
+
+- **Report Submission** — form to submit a customer phishing report (email content) with optional auto-remediation via `POST /api/report/phishing`.
+- **Report History** — table of past submissions fetched from `GET /api/reports`.
 
 ### Forensics & Analytics Tab
 
@@ -42,17 +54,19 @@ The main scan interface with three panels:
 
 - **SIEM Connectors** — configure Splunk HEC, Azure Sentinel, Google SecOps API keys.
 - **SOAR & Alerting** — admin notification DL, Slack webhook URL, action webhook endpoint.
+- **Threat Intel Providers (v0.5)** — VirusTotal, AbuseIPDB, AlienVault OTX API keys.
+- **Email Security Integrations (v0.5)** — Microsoft Defender for Email and Cisco ESA credentials.
 - All secrets are persisted to the encrypted vault. Admin role required.
 
 ## Architecture
 
 - **`index.html`** — single entry point with all markup, modals (login, PII warning), and tab structure.
 - **`style.css`** — dark-mode glassmorphic design with neon accents, responsive grid layout, custom scrollbars.
-- **`app.js`** — ~700 lines handling: auth, scenario loading, scan submission, SSE event handling, D3 graph rendering, detonation results, file upload, replay, analytics, and tab switching.
+- **`app.js`** — ~1,000 lines handling: auth, scenario loading, scan submission, SSE event handling, D3 graph rendering, detonation results, file upload, IP/file reputation, OWASP scan, phishing reports, replay, analytics, and tab switching.
 
 ## Key JavaScript Objects
 
-- **`GRAPH_NODES`** — array of 19 node definitions with id, plane, label, and dependency list. Used by the D3 force simulation to render the graph.
+- **`GRAPH_NODES`** — array of 26 node definitions with id, plane, label, and dependency list. Used by the D3 force simulation to render the graph.
 - **`state`** — reactive state object holding scenarios, selected scenario, scan ID, node status, and edge active states.
 - **`PLANE_COLORS`** — color scheme for perception (blue), decision (amber), and dominance (rose).
 

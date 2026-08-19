@@ -96,5 +96,19 @@ Key functions:
 ## red_team.py
 **Red Team Generator** — produces synthetic phishing, smishing, and vishing payloads for testing and validation of the detection pipeline.
 
+## integrations/ — External Adapters (v0.5)
+
+Pluggable adapters used by the reputation, threat-intel, and remediation skills:
+
+| Adapter | File | Type | Capabilities |
+|---------|------|------|-------------|
+| VirusTotal | `virustotal.py` | Enrichment | IP, URL, file-hash lookups |
+| AbuseIPDB | `abuseipdb.py` | Enrichment | IP reputation with abuse-confidence scoring |
+| AlienVault OTX | `alienvault_otx.py` | Enrichment | IP, domain, URL, hash via OTX pulses |
+| Microsoft Defender for Email | `defender.py` | Remediation | Quarantine email, block sender, get verdict via Microsoft Graph |
+| Cisco ESA | `cisco_esa.py` | Remediation | Mark spam/clean, update domain reputation, block sender |
+
+Secrets are stored in the vault (`core/vault.py`) and managed via `GET/PUT /api/integrations`. If an integration API key is not configured, the skills degrade gracefully to an `"unknown"` result with score 0.
+
 ## tasks.py
 **Celery Task Definitions** — async task wrappers for running individual SGR skills via Celery workers, enabling distributed execution.

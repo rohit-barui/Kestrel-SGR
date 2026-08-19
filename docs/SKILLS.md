@@ -2,6 +2,8 @@
 
 The skills package implements the three logical planes of the APCS architecture. Each skill is a pure function that receives a context dictionary containing upstream node outputs and returns `{"output": {...}, "confidence": int}`.
 
+The SGR graph currently wires **26 nodes** across the three planes.
+
 ## perception.py — Perception Plane
 
 Skills that ingest, parse, and enrich raw payloads:
@@ -18,14 +20,26 @@ Skills that ingest, parse, and enrich raw payloads:
 | `extract_entities` | Ingest output | `{entities_extracted, emails, domains}` | Identity graph entity extraction |
 | `enrich_external` | Extracted URLs/domains | `{dns_real, whois_real, url_analysis}` | Real DNS/WHOIS + suspicion scoring |
 
+## reputation.py — Reputation, Threat Intel & Phishing Validation (v0.5)
+
+New in v0.5, these nodes enrich the graph with external threat intelligence and phishing signals:
+
+| Skill | Input | Output | Description |
+|-------|-------|--------|-------------|
+| `check_ip_reputation` | `extract_urls` | `{ip_reputation}` | VirusTotal, AbuseIPDB, AlienVault OTX IP lookups with abuse-confidence scoring |
+| `check_file_reputation` | `ingest` | `{file_reputation}` | SHA-256 hash lookup against VirusTotal + OTX |
+| `threat_intel_lookup` | `extract_urls` | `{threat_intel}` | URL/domain IoC matching via OTX pulses + VirusTotal |
+| `owasp_analysis` | `extract_urls`, `ingest` | `{owasp_findings, by_severity}` | 10 OWASP Top 10 pattern detectors (XSS, SQLi, SSRF, open redirect, etc.) |
+| `phishing_validation` | `ingest`, `extract_urls`, `validate_spf_dkim` | `{phishing_signals, phishing_likely}` | Brand impersonation, SSL checks, header-anomaly detection |
+
 ## decision.py — Decision Plane
 
 Skills that evaluate risk and recommend actions:
 
 | Skill | Input | Output | Description |
 |-------|-------|--------|-------------|
-| `aggregate_risk` | All perception outputs | `{risk_score}` | Weighted scoring from 12+ signals |
-| `apply_veto` | aggregate_risk + context | `{risk_score, final_confidence}` | Hard overrides on spoof/malicious/ML |
+| `aggregate_risk` | All perception outputs | `{risk_score}` | Weighted scoring from 20+ signals |
+| `apply_veto` | aggregate_risk + context | `{risk_score, final_confidence}` | Hard overrides on spoof/malicious/ML/reputation |
 | `recommend_actions` | apply_veto + context | `{actions}` | Action selection with confidence variants |
 | `validate_spf_dkim` | Ingest content | `{spf_result, dkim_result, dmarc_result, is_spoofed}` | Email authentication validation |
 
@@ -40,6 +54,15 @@ Skills that evaluate risk and recommend actions:
 | Typo-squatted domain | detect_typo_squatting | +15 per match |
 | Malicious URL (detonation) | detonate_urls | +35 + score/5 per URL |
 | Suspicious URL (detonation) | detonate_urls | +20 + score/5 per URL |
+| IP reputation malicious | check_ip_reputation | +25 per malicious |
+| IP reputation suspicious | check_ip_reputation | +15 per suspicious |
+| File reputation malicious | check_file_reputation | +35 |
+| File reputation suspicious | check_file_reputation | +20 |
+| OWASP risk score | owasp_analysis | score / 2 |
+| Brand impersonation | phishing_validation | +30 |
+| Missing SSL | phishing_validation | +10 |
+| Header mismatch | phishing_validation | +15 |
+| Threat-intel IoC match | threat_intel_lookup | +30 per match |
 | SPF spoofed | validate_spf_dkim | +30 |
 | SPF fail | validate_spf_dkim | +15 |
 | DKIM fail | validate_spf_dkim | +10 |
@@ -55,6 +78,10 @@ Skills that evaluate risk and recommend actions:
 |-----------|--------|
 | `is_spoofed == True` | risk_score → max(risk, 90), confidence → 95 |
 | `malicious_count > 0` | risk_score → max(risk, 85) |
+| IP reputation malicious | risk_score → max(risk, 80) |
+| File reputation malicious | risk_score → max(risk, 85) |
+| 2+ threat-intel IoC matches | risk_score → max(risk, 85) |
+| Phishing likely (2+ signals) | risk_score → max(risk, 75) |
 | `ml_risk_score >= 80` | risk_score → max(risk, 80) |
 
 ### Action Selection (recommend_actions)
@@ -79,5 +106,9 @@ Skills that execute containment and deception actions:
 | `rewrite_links` | Actions + URLs | `{rewritten_urls}` | Rewrites suspicious URLs to pass through a proxy |
 | `containment_actions` | Actions + veto | `{blocked_ips, quarantined, mfa_reset}` | IP blocking, email quarantine, MFA reset |
 | `block_ip` | Actions | `{blocked_ip}` | Blocks originating IP at the network level |
-| `quarantine_email` | Actions | `{quarantined}` | Moves email to quarantine folder |
+| `quarantine_email` | Actions | `{quarantined}` | Moves email to quarantine folder (via Defender/Cisco ESA) |
 | `trigger_mfa_reset` | Actions | `{mfa_reset}` | Forces MFA re-authentication for compromised accounts |
+
+## owasp.py — OWASP Detectors (v0.5)
+
+The `owasp_analysis` node ships 10 signature detectors covering OWASP Top 10 categories including Reflected XSS, DOM-based XSS, SQL Injection, Open Redirect, SSRF, and more. Each detector yields an `id`, `owasp_category`, `severity`, and description; results are grouped into `by_severity`.
