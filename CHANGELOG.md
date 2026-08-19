@@ -32,6 +32,13 @@ All notable changes to Kestrel-SGR (APCS) are documented here.
 
 ## [Unreleased]
 
+### Coming Soon (Planned for v0.6.0)
+- **ML Model Retraining** — Extend feature extractor with v0.5 signals (IP/file reputation, OWASP risk, threat-intel IoC matches, phishing validation signals) and retrain the RandomForest risk scorer.
+- **Integration Health Probes** — Per-provider connectivity checks (VirusTotal, AbuseIPDB, OTX, Defender, Cisco ESA) exposed via `/api/integrations/health` with readiness status in dashboard Settings tab.
+- **Phishing Report Automation** — Persistent report store with `report_id`, status tracking, and automatic Defender/Cisco ESA remediation dispatch on `auto_remediate=true`.
+- **Docker/K8s Deployment Docs** — Compose files, Helm chart, and secret-management guides for new integration credentials (vault-backed env injection).
+- **Project Board** — GitHub Projects board for sprint planning (blocked on `gh` token `project` scope; requires manual setup).
+
 ### Added
 - **URL Detonation Engine** (`core/detonation.py`) — Multi-link reputation analysis with CyberWatch API integration and local heuristics (domain length, keywords, IP-based, URL shorteners, HTTPS status). Returns per-URL malicious/suspicious/safe classification with confidence scores and CyberWatch detonation links.
 - **File Upload Scanning** (`server.py`, `web/index.html`, `web/app.js`) — Upload `.eml`/`.txt`/`.msg`/`.html` files via `POST /api/scan/upload` (multipart/form-data). Content is extracted and passed through the full SGR pipeline.
