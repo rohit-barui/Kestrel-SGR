@@ -247,6 +247,16 @@ Kestrel-SGR/
 
 ---
 
+## Coming Soon (v0.6.0)
+
+- **ML Model Retraining** — Extend feature extractor with v0.5 signals (IP/file reputation, OWASP risk, threat-intel IoC matches, phishing validation) and retrain the RandomForest risk scorer
+- **Integration Health Probes** — Per-provider connectivity checks (VirusTotal, AbuseIPDB, OTX, Defender, Cisco ESA) via `/api/integrations/health` with dashboard readiness status
+- **Phishing Report Automation** — Persistent report store with `report_id`, status tracking, and automatic Defender/Cisco ESA remediation dispatch on `auto_remediate=true`
+- **Docker/K8s Deployment Docs** — Compose files, Helm chart, and vault-backed secret injection guides for new integration credentials
+- **GitHub Project Board** — Sprint planning board (manual setup required; `gh` token lacks `project` scope)
+
+---
+
 ## License
 
 GNU Affero General Public License v3.0 — see `LICENSE` for details.
